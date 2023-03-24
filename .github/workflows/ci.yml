@@ -38,7 +38,7 @@ jobs:
           - aarch64-unknown-linux-musl
             #          - arm-unknown-linux-musleabi
             #          - armv7-unknown-linux-musleabihf
-          - x86_64-pc-windows-gnu
+            #          - x86_64-pc-windows-gnu
     steps:
       - name: checkout
         uses: actions/checkout@v2
@@ -88,7 +88,7 @@ jobs:
           name: leaf-${{ matrix.target }}
           path: leaf-${{ matrix.target }}
 
-  build-bin-local:
+  build-bin-local-macos:
     strategy:
       matrix:
         os: [macos-latest]
@@ -132,6 +132,53 @@ jobs:
           name: leaf-${{ matrix.target }}
           path: leaf-${{ matrix.target }}
 
+  build-bin-local-windows:
+    strategy:
+      matrix:
+        os: [windows-latest]
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: show last commit
+        run: |
+          git show --summary
+
+      - name: install rust toolchain
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: nightly
+      
+      - name: install llvm and protobuf
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser # Optional: Needed to run a remote script the first time
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin" # install scoop
+          scoop bucket add extras
+          scoop install protobuf llvm
+
+      - name: build
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: |
+          set-content env:CFG_COMMIT_HASH $(git log --pretty=format:'%h' -n 1)
+          set-content env:CFG_COMMIT_DATE $(git log --format="%ci" -n 1)
+          cargo build --release --target ${{ matrix.target }} -p leaf-bin
+
+      - name: rename and compress artifacts
+        run: |
+          mv target/${{ matrix.target }}/release/leaf.exe leaf-${{ matrix.target }}.exe
+
+      - name: upload assets
+        uses: actions/upload-artifact@v2
+        with:
+          name: leaf-${{ matrix.target }}.exe
+          path: leaf-${{ matrix.target }}.exe
           #  build-lib-ios:
           #    runs-on: macos-latest
           #    steps:
