@@ -17,6 +17,8 @@ use crate::proxy::amux;
 use crate::proxy::http;
 #[cfg(feature = "inbound-quic")]
 use crate::proxy::quic;
+#[cfg(feature = "inbound-quic-jls")]
+use crate::proxy::quic_jls;
 #[cfg(feature = "inbound-shadowsocks")]
 use crate::proxy::shadowsocks;
 #[cfg(feature = "inbound-socks")]
@@ -150,6 +152,27 @@ impl InboundManager {
                         settings.certificate.clone(),
                         settings.certificate_key.clone(),
                         settings.alpn.clone(),
+                    )?);
+                    let handler = Arc::new(proxy::inbound::Handler::new(
+                        tag.clone(),
+                        None,
+                        Some(datagram),
+                    ));
+                    handlers.insert(tag.clone(), handler);
+                }
+                #[cfg(feature = "inbound-quic-jls")]
+                "quic-jls" => {
+                    let settings =
+                        config::QuicJlsInboundSettings::parse_from_bytes(&inbound.settings)?;
+                    let datagram = Arc::new(quic_jls::inbound::DatagramHandler::new(
+                        settings.certificate.clone(),
+                        settings.certificate_key.clone(),
+                        settings.alpn.clone(),
+                        settings.zero_rtt,
+                        settings.pwd.clone(),
+                        settings.iv,
+                        settings.upstream_addr.clone(),
+                        settings.congestion_controller.clone(),
                     )?);
                     let handler = Arc::new(proxy::inbound::Handler::new(
                         tag.clone(),

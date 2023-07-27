@@ -44,6 +44,7 @@ all-endpoints = [
     "inbound-chain",
     "inbound-amux",
     # "inbound-quic",
+    "inbound-quic-jls",
     "inbound-ws",
     "inbound-tls",
     "inbound-trojan",
@@ -65,6 +66,7 @@ all-endpoints = [
     "outbound-amux",
     "outbound-vmess",
     # "outbound-quic",
+    "outbound-quic-jls",
     "outbound-failover",
     "outbound-static",
     "outbound-tryall",
@@ -102,6 +104,7 @@ outbound-amux= ["tokio-util"]
 outbound-quic = ["quinn", "rustls", "webpki-roots"]
 outbound-select = []
 outbound-vmess = ["lz_fnv", "cfb-mode", "hmac", "aes", "sha3", "digest", "uuid", "md-5", "tokio-util"]
+outbound-quic-jls = ["quinn-jls", "rustls-jls", "webpki-roots"]
 
 # Inbounds
 inbound-trojan = ["sha2", "hex"]
@@ -112,6 +115,7 @@ inbound-tun = ["tun", "netstack-lwip"]
 inbound-ws = ["tungstenite", "tokio-tungstenite", "url", "http"]
 inbound-amux = ["tokio-util"]
 inbound-quic = ["quinn", "rustls", "webpki-roots"]
+inbound-quic-jls = ["quinn-jls", "rustls-jls", "webpki-roots"]
 inbound-tls = []
 inbound-chain = []
 inbound-cat = ["tokio/io-std"]
@@ -222,6 +226,10 @@ tokio-util = { version = "0.6", default-features = false, features = ["io"], opt
 # QUIC
 quinn = { version = "0.8", default-features = false, features = ["tls-rustls"], optional = true }
 rustls = { version = "0.20", optional = true }
+
+# QUIC-JLS
+quinn-jls = { package = "quinn", git = "https://github.com/vincentliu77/quinn-jls", branch = "dev", default-features = false, features = ["tls-rustls", "runtime-tokio"], optional = true }
+rustls-jls = { package = "rustls", git = "https://github.com/vincentliu77/rustls-jls", branch = "jls-main", optional = true }
 
 # API
 warp = { version = "0.3", default-features = false, optional = true }

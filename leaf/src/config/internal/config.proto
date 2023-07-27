@@ -71,6 +71,17 @@ message QuicInboundSettings {
 	repeated string alpn = 3;
 }
 
+message QuicJlsInboundSettings {
+	string certificate = 1;
+	string certificate_key = 2;
+	string pwd = 3;
+	string iv = 4;
+	string upstream_addr = 5;
+	bool zero_rtt = 6;
+	string congestion_controller = 7;
+	repeated string alpn = 8;
+}
+
 message TlsInboundSettings {
 	string certificate = 1;
 	string certificate_key = 2;
@@ -155,6 +166,17 @@ message QuicOutboundSettings {
 	string server_name = 3;
 	string certificate = 4;
 	repeated string alpn = 5;
+}
+
+message QuicJlsOutboundSettings {
+	string address = 1;
+	uint32 port = 2;
+	string server_name = 3;
+	string pwd = 4;
+	string iv = 5;
+	bool zero_rtt = 6;
+	string congestion_controller = 7;
+	repeated string alpn = 8;
 }
 
 message VMessOutboundSettings {

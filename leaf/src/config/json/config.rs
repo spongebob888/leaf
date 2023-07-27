@@ -58,6 +58,16 @@ pub struct QuicInboundSettings {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct QuicJlsInboundSettings {
+    pub certificate: Option<String>,
+    #[serde(rename = "certificateKey")]
+    pub certificate_key: Option<String>,
+    pub pwd: Option<String>,
+    pub iv: Option<String>,
+    pub alpn: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TlsInboundSettings {
     pub certificate: Option<String>,
     #[serde(rename = "certificateKey")]
@@ -174,6 +184,17 @@ pub struct QuicOutboundSettings {
     #[serde(rename = "serverName")]
     pub server_name: Option<String>,
     pub certificate: Option<String>,
+    pub alpn: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct QuicJlsOutboundSettings {
+    pub address: Option<String>,
+    pub port: Option<u16>,
+    #[serde(rename = "upstreamAddr")]
+    pub upstream_addr: Option<String>,
+    pub pwd: Option<String>,
+    pub iv: Option<String>,
     pub alpn: Option<Vec<String>>,
 }
 

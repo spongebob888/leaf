@@ -316,6 +316,38 @@ impl OutboundManager {
                         .stream_handler(stream)
                         .build()
                 }
+                #[cfg(feature = "outbound-quic-jls")]
+                "quic-jls" => {
+                    let settings =
+                        config::QuicJlsOutboundSettings::parse_from_bytes(&outbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
+                    let server_name = if settings.server_name.is_empty() {
+                        None
+                    } else {
+                        Some(settings.server_name.clone())
+                    };
+
+                    if settings.pwd.is_empty() {
+                        return Err(anyhow!("quic-jls: empty pwd"));
+                    }
+                    
+                    let stream = Box::new(quic_jls::outbound::StreamHandler::new(
+                        settings.address.clone(),
+                        settings.port as u16,
+                        server_name,
+                        settings.alpn.clone(),
+                        dns_client.clone(),
+                        settings.zero_rtt,
+                        settings.pwd,
+                        settings.iv,
+                        settings.congestion_controller,
+                    ));
+
+                    HandlerBuilder::default()
+                        .tag(tag.clone())
+                        .stream_handler(stream)
+                        .build()
+                }
                 _ => continue,
             };
             cached_handlers.push(HandlerCacheEntry {

@@ -82,6 +82,8 @@ pub mod tun;
 pub mod vmess;
 #[cfg(any(feature = "inbound-ws", feature = "outbound-ws"))]
 pub mod ws;
+#[cfg(any(feature = "inbound-quic-jls", feature = "outbound-quic-jls"))]
+pub mod quic_jls;
 
 pub use datagram::{
     SimpleInboundDatagram, SimpleInboundDatagramRecvHalf, SimpleInboundDatagramSendHalf,
