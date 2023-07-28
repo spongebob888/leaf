@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{io, pin::Pin};
 
+use ::quinn::Connecting;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::stream::Stream;
@@ -11,7 +12,6 @@ use futures::{
     Future,
 };
 use futures_util::pin_mut;
-use ::quinn::Connecting;
 use rustls_jls::JlsConfig;
 
 use crate::{proxy::*, session::Session};
@@ -48,7 +48,6 @@ impl Stream for Incoming {
         let mut connectings = Vec::<quinn::Connecting>::new();
         let mut closed = false;
         if !self.incoming_closed {
-
             let fut = Box::pin(self.inner.accept());
             pin_mut!(fut);
             match fut.poll(cx) {
@@ -60,9 +59,8 @@ impl Stream for Incoming {
                 }
                 Poll::Pending => (),
             }
-
         }
-        self.connectings.append(& mut connectings);
+        self.connectings.append(&mut connectings);
         self.incoming_closed = closed;
         let mut new_conns = Vec::new();
         let zero_rtt = self.zero_rtt;
@@ -199,6 +197,11 @@ impl Handler {
             .with_safe_defaults()
             .with_no_client_auth()
             .with_single_cert(cert, key)?;
+        (crypto.send_half_rtt_data, crypto.max_early_data_size) = if zero_rtt {
+            (true, u32::MAX)
+        } else {
+            (false, 0)
+        };
         if jls_pwd.is_empty() {
             return Err(anyhow!("quic-jls: empty jls pwd"));
         }

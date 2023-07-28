@@ -62,6 +62,7 @@ impl Manager {
             .with_safe_defaults()
             .with_root_certificates(roots)
             .with_no_client_auth();
+        client_crypto.enable_early_data = zero_rtt;
         client_crypto.jls_config = JlsConfig::new(&jls_pwd, &jls_iv);
         for alpn in alpns {
             client_crypto.alpn_protocols.push(alpn.as_bytes().to_vec());
@@ -189,17 +190,22 @@ impl Manager {
             .connect(connect_addr, server_name)
             .map_err(quic_err)?;
         let new_conn = if self.zero_rtt {
-            let (new_conn, zero_rtt_accept) = connecting.into_0rtt().map_err(|_| {
-                io::Error::new(io::ErrorKind::Other, "error while setup 0rtt connection")
-            })?;
-            tokio::spawn(async move {
-                if zero_rtt_accept.await {
-                    log::info!("zero rtt accepted");
-                } else {
-                    log::info!("zero rtt rejected");
+            match connecting.into_0rtt() {
+                Ok((new_conn, zero_rtt_accept)) => {
+                    tokio::spawn(async move {
+                        if zero_rtt_accept.await {
+                            log::info!("zero rtt accepted");
+                        } else {
+                            log::info!("zero rtt rejected");
+                        }
+                    });
+                    new_conn
                 }
-            });
-            new_conn
+                Err(conn) => {
+                    log::info!("zero rtt not available");
+                    conn.await?
+                }
+            }
         } else {
             connecting.await.map_err(quic_err)?
         };
