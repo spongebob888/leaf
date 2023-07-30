@@ -66,8 +66,11 @@ pub struct QuicJlsInboundSettings {
     pub pwd: Option<String>,
     pub iv: Option<String>,
     pub alpn: Option<Vec<String>>,
+    #[serde(rename = "zeroRtt")]
     pub zero_rtt: Option<bool>,
+    #[serde(rename = "upstreamAddr")]
     pub upstream_addr: Option<String>,
+    #[serde(rename = "congestionController")]
     pub congestion_controller: Option<String>,
 }
 
@@ -200,7 +203,9 @@ pub struct QuicJlsOutboundSettings {
     pub pwd: Option<String>,
     pub iv: Option<String>,
     pub alpn: Option<Vec<String>>,
+    #[serde(rename = "zeroRtt")]
     pub zero_rtt: Option<bool>,
+    #[serde(rename = "congestionController")]
     pub congestion_controller: Option<String>,
 }
 

@@ -45,8 +45,8 @@ fn test_quic_jls_trojan() {
                     ],
                     "pwd": "user_pwd",
                     "iv": "user_iv",
-                    "zero_rtt": false,
-                    "congestion_controller": "bbr"
+                    "zeroRtt": true,
+                    "congestionController": "bbr"
                 }
             },
             {
@@ -83,11 +83,11 @@ fn test_quic_jls_trojan() {
                     "alpn": [
                         "h3"
                     ],
-                    "upstream_addr":"codepen.io:443",
+                    "upstreamAddr":"codepen.io:443",
                     "pwd": "user_pwd",
                     "iv": "user_iv",
-                    "zero_rtt": false,
-                    "congestion_controller": "bbr"
+                    "zeroRtt": true,
+                    "congestionController": "bbr"
                 }
             },
             {
@@ -139,8 +139,8 @@ fn test_quic_jls_trojan() {
                     ],
                     "pwd": "user_pwd",
                     "iv": "user_iv",
-                    "zero_rtt": true,
-                    "congestion_controller": "bbr"
+                    "zeroRtt": false,
+                    "congestionController": "bbr"
                 }
             },
             {
@@ -163,25 +163,25 @@ fn test_quic_jls_trojan() {
                 "port": 3002,
                 "settings": {
                     "actors": [
-                        "quic",
+                        "quic-jls",
                         "trojan"
                     ]
                 }
             },
             {
-                "protocol": "quic",
-                "tag": "quic",
+                "protocol": "quic-jls",
+                "tag": "quic-jls",
                 "settings": {
                     "certificate": "cert.pem",
                     "certificateKey": "key.pem",
-                    "upstream_addr":"codepen.io:443",
+                    "upstreamAddr":"codepen.io:443",
                     "alpn": [
                         "h3"
                     ],
                     "pwd": "user_pwd",
                     "iv": "user_iv",
-                    "zero_rtt": true,
-                    "congestion_controller": "bbr"
+                    "zeroRtt": false,
+                    "congestionController": "bbr"
                 }
             },
             {
