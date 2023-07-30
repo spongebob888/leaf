@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -539,7 +540,7 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                     }
                     if let Some(ext_pwd) = ext_settings.pwd {
                         settings.pwd = ext_pwd.clone();
-                        assert!(!ext_pwd.is_empty());
+                        assert!(!ext_pwd.is_empty(),"[quic-jls] empty pwd");
                     }
                     if let Some(ext_iv) = ext_settings.iv {
                         settings.iv = ext_iv.clone();
@@ -550,7 +551,12 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                     else{
                         settings.congestion_controller = "bbr".into();
                     }
-                    
+                    if let Some(ext_upstream_addr) = ext_settings.upstream_addr {
+                        settings.upstream_addr = ext_upstream_addr.clone();
+                    }
+                    else{
+                        panic!("[quic-jls] upstream address empty");
+                    }
                     let settings = settings.write_to_bytes().unwrap();
                     inbound.settings = settings;
                     inbounds.push(inbound);
