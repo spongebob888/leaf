@@ -3,39 +3,38 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{io, pin::Pin};
 
-use ::quinn::Connecting;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::stream::Stream;
-use futures::{
-    task::{Context, Poll},
-    Future,
-};
-use futures_util::pin_mut;
+use futures::task::{Context, Poll};
+use futures_util::stream::FuturesUnordered;
+use futures_util::StreamExt;
 use rustls_jls::JlsConfig;
+use tokio::select;
+use tokio::sync::mpsc::error::TryRecvError;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{proxy::*, session::Session};
 
 use super::QuicProxyStream;
 use quinn_jls as quinn;
+use quinn_jls::{RecvStream, SendStream};
 use rustls_jls as rustls;
 
 struct Incoming {
-    inner: quinn::Endpoint,
-    connectings: Vec<quinn::Connecting>,
-    new_conns: Vec<quinn::Connection>,
+    bi_recv: Receiver<(SendStream, RecvStream, SocketAddr)>,
     incoming_closed: bool,
-    zero_rtt: bool,
 }
 
 impl Incoming {
     pub fn new(inner: quinn::Endpoint, zero_rtt: bool) -> Self {
+        let (conn_send, conn_recv) = tokio::sync::mpsc::channel(20);
+        let (bi_send, bi_recv) = tokio::sync::mpsc::channel(20);
+        tokio::spawn(handle_connectings(inner.clone(), conn_send, zero_rtt));
+        tokio::spawn(handle_connections(conn_recv, bi_send));
         Incoming {
-            inner,
-            connectings: Vec::new(),
-            new_conns: Vec::new(),
+            bi_recv: bi_recv,
             incoming_closed: false,
-            zero_rtt: zero_rtt,
         }
     }
 }
@@ -44,87 +43,24 @@ impl Stream for Incoming {
     type Item = AnyBaseInboundTransport;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // FIXME don't iterate and poll all
-        let mut connectings = Vec::<quinn::Connecting>::new();
-        let mut closed = false;
-        if !self.incoming_closed {
-            let fut = Box::pin(self.inner.accept());
-            pin_mut!(fut);
-            match fut.poll(cx) {
-                Poll::Ready(Some(connecting)) => {
-                    connectings.push(connecting);
-                }
-                Poll::Ready(None) => {
-                    closed = true;
-                }
-                Poll::Pending => (),
+        match Pin::new(&mut self.bi_recv).poll_recv(cx) {
+            Poll::Ready(Some((send, recv, addr))) => {
+                let mut sess = Session {
+                    source: addr,
+                    ..Default::default()
+                };
+                // TODO Check whether the index suitable for this purpose.
+                sess.stream_id = Some(send.id().index());
+                let stream =
+                    AnyBaseInboundTransport::Stream(Box::new(QuicProxyStream { recv, send }), sess);
+                Poll::Ready(Some(stream))
             }
-        }
-        self.connectings.append(&mut connectings);
-        self.incoming_closed = closed;
-        let mut new_conns = Vec::new();
-        let zero_rtt = self.zero_rtt;
-        while let Some(connecting) = self.connectings.pop() {
-            if zero_rtt {
-                if let Ok((new_conn, _accept_zero_rtt)) = connecting.into_0rtt() {
-                    new_conns.push(new_conn);
-                } else {
-                    log::error!("error while setup zero rtt connection");
-                }
-            } else {
-                let fut = Box::pin(connecting);
-                pin_mut!(fut);
-                match fut.poll(cx) {
-                    Poll::Ready(Ok(new_conn)) => {
-                        new_conns.push(new_conn);
-                    }
-                    Poll::Ready(Err(e)) => {
-                        log::debug!("quic connect failed: {}", e);
-                    }
-                    Poll::Pending => (),
-                }
+            Poll::Ready(None) => {
+                self.incoming_closed = true;
+                log::error!("[quic-jls] endpoint closed");
+                Poll::Ready(None)
             }
-        }
-        if !new_conns.is_empty() {
-            self.new_conns.append(&mut new_conns);
-        }
-
-        let mut stream: Option<Self::Item> = None;
-        let mut completed = Vec::new();
-        for (idx, new_conn) in self.new_conns.iter_mut().enumerate() {
-            let fut = Box::pin(new_conn.accept_bi());
-            pin_mut!(fut);
-            match fut.poll(cx) {
-                Poll::Ready(Ok((send, recv))) => {
-                    let mut sess = Session {
-                        source: new_conn.remote_address(),
-                        ..Default::default()
-                    };
-                    // TODO Check whether the index suitable for this purpose.
-                    sess.stream_id = Some(send.id().index());
-                    stream.replace(AnyBaseInboundTransport::Stream(
-                        Box::new(QuicProxyStream { recv, send }),
-                        sess,
-                    ));
-                    break;
-                }
-                Poll::Ready(Err(e)) => {
-                    log::debug!("new quic bidirectional stream failed: {}", e);
-                    completed.push(idx);
-                }
-                Poll::Pending => (),
-            }
-        }
-        for idx in completed.iter().rev() {
-            self.new_conns.remove(*idx);
-        }
-
-        if let Some(stream) = stream.take() {
-            Poll::Ready(Some(stream))
-        } else if self.incoming_closed && self.connectings.is_empty() && self.new_conns.is_empty() {
-            Poll::Ready(None)
-        } else {
-            Poll::Pending
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -264,5 +200,113 @@ impl InboundDatagramHandler for Handler {
             incoming,
             self.zero_rtt,
         ))))
+    }
+}
+
+async fn handle_connectings(
+    ep: quinn::Endpoint,
+    conn_send: Sender<quinn::Connection>,
+    zero_rtt: bool,
+) {
+    while let Some(conn) = ep.accept().await {
+        log::trace!("[quic-jls] incoming connecting");
+        if zero_rtt {
+            match conn.into_0rtt() {
+                Ok((conn, _accept)) => {
+                    log::trace!("[quic-jls] try into half rtt");
+                    let _ = conn_send.send(conn).await.map_err(|e| {
+                        log::trace!("[quic-jls] connection send channel closed: {:?}", e)
+                    });
+                }
+                Err(conn) => {
+                    log::trace!("[quic-jls] into half rtt failed");
+                    match conn.await {
+                        Ok(conn) => {
+                            let _ = conn_send.send(conn).await.map_err(|e| {
+                                log::trace!("[quic-jls] connection send channel closed: {:?}", e)
+                            });
+                        }
+                        Err(e) => {
+                            log::trace!("[quic-jls]] into connnection failed");
+                        }
+                    }
+                }
+            }
+        } else {
+            match conn.await {
+                Ok(conn) => {
+                    let _ = conn_send.send(conn).await.map_err(|e| {
+                        log::trace!("[quic-jls] connection send channel closed: {:?}", e)
+                    });
+                }
+                Err(e) => {
+                    log::trace!("[quic-jls] into connnection failed");
+                }
+            }
+        }
+    }
+}
+
+async fn handle_connections(
+    mut conn_recv: Receiver<quinn::Connection>,
+    bi_send: Sender<(SendStream, RecvStream, SocketAddr)>,
+) {
+    let mut conns = Vec::<quinn::Connection>::new();
+    let mut futs = FuturesUnordered::new();
+    loop {
+        conns.retain(|x| x.close_reason() == None);
+        if futs.is_empty() {
+            match conn_recv.recv().await {
+                Some(conn) => conns.push(conn),
+                None => {
+                    log::error!("[quic-jls] connection send channel closed");
+                    break;
+                }
+            }
+        }
+        while let Some(conn) = conns.pop() {
+            let fut =        async {
+                loop {
+                    match conn.accept_bi().await {
+                        Ok((send, recv)) => {
+                            match bi_send.send((send, recv, conn.remote_address())).await {
+                                Ok(()) => (),
+                                Err(e) => {
+                                    log::error!("[quic-jls] bi stream recv channel closed: {:?}", e);
+                                    drop(conn);
+                                    break Err("Send Err");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("[quic-jls] accept bi error: {:?}", e);
+                            drop(conn);
+                            break Err("Connection Err");
+                        }
+                    }
+                }
+            };
+            futs.push(fut);
+        }
+        select! {
+            incoming = conn_recv.recv() => {
+                match incoming {
+                    Some(conn) => {conns.push(conn)}
+                    None => {
+                        log::error!("[quic-jls] connection send channel closed");
+                        break
+                    }
+                }
+            }
+            incoming = futs.next() => {
+                match incoming {
+                    Some(Ok(())) => {}
+                    Some(Err("Send Err")) => {break;}
+                    Some(Err(_e)) => {}
+                    None => {}
+                }
+
+            }
+        }
     }
 }
