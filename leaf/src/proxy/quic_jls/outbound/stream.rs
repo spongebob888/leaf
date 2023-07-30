@@ -116,7 +116,7 @@ impl Manager {
         self.connections.lock().await.retain(|c| {
             let is_jls = c.new_conn.is_jls() == Some(true);
             if !is_jls {
-                log::error!("jls pwd/iv error or connection hijacked");
+                log::error!("[quic-jls] jls pwd/iv error or connection hijacked");
             }
             !c.completed && is_jls
         });
@@ -128,7 +128,7 @@ impl Manager {
                     Ok((send, recv)) => {
                         conn.total_accepted += 1;
                         log::trace!(
-                            "opened quic stream on connection with rtt {}ms, total_accepted {}",
+                            "[quic-jls] opened quic stream on connection with rtt {}ms, total_accepted {}",
                             conn.new_conn.rtt().as_millis(),
                             conn.total_accepted,
                         );
@@ -136,7 +136,7 @@ impl Manager {
                     }
                     Err(e) => {
                         conn.completed = true;
-                        log::debug!("open quic bidirectional stream failed: {}", e);
+                        log::debug!("[quic-jls] open quic bidirectional stream failed: {}", e);
                     }
                 }
             } else {
@@ -149,7 +149,7 @@ impl Manager {
             .new_udp_socket(&*crate::option::UNSPECIFIED_BIND_ADDR)
             .await?;
         let runtime = quinn::default_runtime()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no async runtime found"))?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "[quic-jls] no async runtime found"))?;
         let mut endpoint = quinn::Endpoint::new(
             quinn::EndpointConfig::default(),
             None,
@@ -167,7 +167,7 @@ impl Manager {
                 .map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::Other,
-                        format!("lookup {} failed: {}", &self.address, e),
+                        format!("[quic-jls] lookup {} failed: {}", &self.address, e),
                     )
                 })
                 .await?
@@ -175,7 +175,7 @@ impl Manager {
         if ips.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "could not resolve to any address",
+                "[quic-jls] could not resolve to any address",
             ));
         }
         let connect_addr = SocketAddr::new(ips[0], self.port);
@@ -194,15 +194,15 @@ impl Manager {
                 Ok((new_conn, zero_rtt_accept)) => {
                     tokio::spawn(async move {
                         if zero_rtt_accept.await {
-                            log::info!("zero rtt accepted");
+                            log::info!("[quic-jls] zero rtt accepted");
                         } else {
-                            log::info!("zero rtt rejected");
+                            log::info!("[quic-jls] zero rtt rejected");
                         }
                     });
                     new_conn
                 }
                 Err(conn) => {
-                    log::info!("zero rtt not available");
+                    log::info!("[quic-jls] zero rtt not available");
                     conn.await?
                 }
             }
