@@ -91,7 +91,7 @@ impl Manager {
             }
             "" => {} // Default congestion controller
             _ => {
-                log::error!("congestion controller {:?} not supported", congestion_ctrl);
+                log::error!("[quic-jls] congestion controller {:?} not supported", congestion_ctrl);
             }
         };
 
