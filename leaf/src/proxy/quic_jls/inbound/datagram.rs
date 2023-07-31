@@ -292,6 +292,9 @@ async fn handle_connections(
                                 }
                             }
                         }
+                        Err(quinn::ConnectionError::TimedOut) => {
+                            continue;
+                        }
                         Err(e) => {
                             log::error!("[quic-jls] accept bi error: {:?}", e);
                             drop(conn);
