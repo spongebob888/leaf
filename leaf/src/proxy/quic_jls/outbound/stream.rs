@@ -25,6 +25,7 @@ struct Connection {
     pub new_conn: quinn::Connection,
     pub total_accepted: usize,
     pub completed: bool,
+    pub zero_rtt: bool,
 }
 
 struct Manager {
@@ -91,7 +92,10 @@ impl Manager {
             }
             "" => {} // Default congestion controller
             _ => {
-                log::error!("[quic-jls] congestion controller {:?} not supported", congestion_ctrl);
+                log::error!(
+                    "[quic-jls] congestion controller {:?} not supported",
+                    congestion_ctrl
+                );
             }
         };
 
@@ -114,11 +118,19 @@ impl Manager {
         &self,
     ) -> io::Result<QuicProxyStream<quinn::RecvStream, quinn::SendStream>> {
         self.connections.lock().await.retain(|c| {
-            let is_jls = c.new_conn.is_jls() == Some(true);
-            if !is_jls {
-                log::error!("[quic-jls] jls pwd/iv error or connection hijacked");
+            if c.completed {
+                return false;
             }
-            !c.completed && is_jls
+            match c.new_conn.is_jls() {
+                Some(true) => {
+                    return true;
+                }
+                Some(false) => {
+                    log::error!("[quic-jls] jls pwd/iv error or connection hijacked");
+                    return false;
+                }
+                None => return c.zero_rtt, // Wait for handshake (for zero rtt, handshake may not be finished)
+            }
         });
 
         for conn in self.connections.lock().await.iter_mut() {
@@ -148,8 +160,9 @@ impl Manager {
         let socket = self
             .new_udp_socket(&*crate::option::UNSPECIFIED_BIND_ADDR)
             .await?;
-        let runtime = quinn::default_runtime()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "[quic-jls] no async runtime found"))?;
+        let runtime = quinn::default_runtime().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::Other, "[quic-jls] no async runtime found")
+        })?;
         let mut endpoint = quinn::Endpoint::new(
             quinn::EndpointConfig::default(),
             None,
@@ -189,6 +202,7 @@ impl Manager {
         let connecting = endpoint
             .connect(connect_addr, server_name)
             .map_err(quic_err)?;
+        let conn_zero_rtt;
         let new_conn = if self.zero_rtt {
             match connecting.into_0rtt() {
                 Ok((new_conn, zero_rtt_accept)) => {
@@ -199,14 +213,17 @@ impl Manager {
                             log::info!("[quic-jls] zero rtt rejected");
                         }
                     });
+                    conn_zero_rtt = true;
                     new_conn
                 }
                 Err(conn) => {
                     log::info!("[quic-jls] zero rtt not available");
+                    conn_zero_rtt = false;
                     conn.await?
                 }
             }
         } else {
+            conn_zero_rtt = false;
             connecting.await.map_err(quic_err)?
         };
 
@@ -216,6 +233,7 @@ impl Manager {
             new_conn,
             total_accepted: 1,
             completed: false,
+            zero_rtt: conn_zero_rtt,
         });
 
         Ok(QuicProxyStream { recv, send })
