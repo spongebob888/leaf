@@ -78,8 +78,6 @@ fn test_quic_jls_trojan() {
                 "protocol": "quic-jls",
                 "tag": "quic-jls",
                 "settings": {
-                    "certificate": "cert.der",
-                    "certificateKey": "key.der",
                     "alpn": [
                         "h3"
                     ],

@@ -11,7 +11,6 @@ use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
 use rustls_jls::JlsConfig;
 use tokio::select;
-use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{proxy::*, session::Session};
@@ -88,45 +87,57 @@ impl Handler {
         upstream_addr: String,
         congestion_ctrl: String,
     ) -> Result<Self> {
-        let (cert, key) =
-            fs::read(&certificate).and_then(|x| Ok((x, fs::read(&certificate_key)?)))?;
+        let (cert, key) = if certificate.is_empty() && certificate_key.is_empty() {
+            let cert =
+                rcgen::generate_simple_self_signed(vec![upstream_addr.clone().into()]).unwrap();
+            let cert_der = cert.serialize_der().unwrap();
+            let priv_key = cert.serialize_private_key_der();
+            let priv_key = rustls::PrivateKey(priv_key);
+            let cert_chain = vec![rustls::Certificate(cert_der.clone())];
+            log::info!("[quic-jls] generate self-signed cert automatically");
+            (cert_chain, priv_key)
+        } else {
+            let (cert, key) =
+                fs::read(&certificate).and_then(|x| Ok((x, fs::read(&certificate_key)?)))?;
 
-        let cert = match Path::new(&certificate).extension().map(|ext| ext.to_str()) {
-            Some(Some(ext)) if ext == "der" => {
-                vec![rustls::Certificate(cert)]
-            }
-            _ => rustls_pemfile::certs(&mut &*cert)?
-                .into_iter()
-                .map(rustls::Certificate)
-                .collect(),
-        };
+            let cert = match Path::new(&certificate).extension().map(|ext| ext.to_str()) {
+                Some(Some(ext)) if ext == "der" => {
+                    vec![rustls::Certificate(cert)]
+                }
+                _ => rustls_pemfile::certs(&mut &*cert)?
+                    .into_iter()
+                    .map(rustls::Certificate)
+                    .collect(),
+            };
 
-        let key = match Path::new(&certificate_key)
-            .extension()
-            .map(|ext| ext.to_str())
-        {
-            Some(Some(ext)) if ext == "der" => rustls::PrivateKey(key),
-            _ => {
-                let pkcs8 = rustls_pemfile::pkcs8_private_keys(&mut &*key)?;
-                match pkcs8.into_iter().next() {
-                    Some(x) => rustls::PrivateKey(x),
-                    None => {
-                        let rsa = rustls_pemfile::rsa_private_keys(&mut &*key)?;
-                        match rsa.into_iter().next() {
-                            Some(x) => rustls::PrivateKey(x),
-                            None => {
-                                let rsa = rustls_pemfile::ec_private_keys(&mut &*key)?;
-                                match rsa.into_iter().next() {
-                                    Some(x) => rustls::PrivateKey(x),
-                                    None => {
-                                        return Err(anyhow!("no private keys found",));
+            let key = match Path::new(&certificate_key)
+                .extension()
+                .map(|ext| ext.to_str())
+            {
+                Some(Some(ext)) if ext == "der" => rustls::PrivateKey(key),
+                _ => {
+                    let pkcs8 = rustls_pemfile::pkcs8_private_keys(&mut &*key)?;
+                    match pkcs8.into_iter().next() {
+                        Some(x) => rustls::PrivateKey(x),
+                        None => {
+                            let rsa = rustls_pemfile::rsa_private_keys(&mut &*key)?;
+                            match rsa.into_iter().next() {
+                                Some(x) => rustls::PrivateKey(x),
+                                None => {
+                                    let rsa = rustls_pemfile::ec_private_keys(&mut &*key)?;
+                                    match rsa.into_iter().next() {
+                                        Some(x) => rustls::PrivateKey(x),
+                                        None => {
+                                            return Err(anyhow!("no private keys found",));
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
+            };
+            (cert, key)
         };
 
         let mut crypto = rustls::ServerConfig::builder()
@@ -265,14 +276,17 @@ async fn handle_connections(
             }
         }
         while let Some(conn) = conns.pop() {
-            let fut =        async {
+            let fut = async {
                 loop {
                     match conn.accept_bi().await {
                         Ok((send, recv)) => {
                             match bi_send.send((send, recv, conn.remote_address())).await {
                                 Ok(()) => (),
                                 Err(e) => {
-                                    log::error!("[quic-jls] bi stream recv channel closed: {:?}", e);
+                                    log::error!(
+                                        "[quic-jls] bi stream recv channel closed: {:?}",
+                                        e
+                                    );
                                     drop(conn);
                                     break Err("Send Err");
                                 }

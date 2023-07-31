@@ -115,7 +115,7 @@ inbound-tun = ["tun", "netstack-lwip"]
 inbound-ws = ["tungstenite", "tokio-tungstenite", "url", "http"]
 inbound-amux = ["tokio-util"]
 inbound-quic = ["quinn", "rustls", "webpki-roots"]
-inbound-quic-jls = ["quinn-jls", "rustls-jls", "webpki-roots"]
+inbound-quic-jls = ["quinn-jls", "rustls-jls", "webpki-roots", "rcgen"]
 inbound-tls = []
 inbound-chain = []
 inbound-cat = ["tokio/io-std"]
@@ -226,6 +226,7 @@ tokio-util = { version = "0.6", default-features = false, features = ["io"], opt
 # QUIC
 quinn = { version = "0.8", default-features = false, features = ["tls-rustls"], optional = true }
 rustls = { version = "0.20", optional = true }
+rcgen = { version = "0.8", optional = true }
 
 # QUIC-JLS
 quinn-jls = { package = "quinn", git = "https://github.com/vincentliu77/quinn-jls", branch = "dev", default-features = false, features = ["tls-rustls", "runtime-tokio"], optional = true }
