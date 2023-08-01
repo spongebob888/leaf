@@ -163,7 +163,7 @@ impl Handler {
             .max_idle_timeout(Some(quinn::IdleTimeout::from(quinn::VarInt::from_u32(
                 300_000,
             )))); // ms
-        match congestion_ctrl.as_str() {
+        match congestion_ctrl.to_lowercase().as_str() {
             "bbr" => {
                 transport_config.congestion_controller_factory(Arc::new(
                     quinn::congestion::BbrConfig::default(),
@@ -275,6 +275,7 @@ async fn handle_connections(
                 }
             }
         }
+        log::trace!("[quic-jls] total connections: {:?}",futs.len());
         while let Some(conn) = conns.pop() {
             let fut = async {
                 loop {
@@ -293,7 +294,8 @@ async fn handle_connections(
                             }
                         }
                         Err(quinn::ConnectionError::TimedOut) => {
-                            continue;
+                            log::trace!("[quic-jls] accept bi timed out");
+                            break Err("Timed Out");
                         }
                         Err(e) => {
                             log::error!("[quic-jls] accept bi error: {:?}", e);
