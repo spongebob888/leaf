@@ -152,7 +152,7 @@ impl Handler {
         if jls_pwd.is_empty() {
             return Err(anyhow!("quic-jls: empty jls pwd"));
         }
-        crypto.jls_config = JlsConfig::new(&jls_pwd, &jls_iv);
+        crypto.jls_config = rustls::JlsServerConfig::new(&jls_pwd, &jls_iv,&upstream_addr)?;
         for alpn in alpns {
             crypto.alpn_protocols.push(alpn.as_bytes().to_vec());
         }
@@ -185,7 +185,6 @@ impl Handler {
             }
         };
         let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(crypto));
-        server_config.jls_config = quinn::JlsServerConfig::new(&upstream_addr).into();
         server_config.transport = Arc::new(transport_config);
 
         Ok(Self {
