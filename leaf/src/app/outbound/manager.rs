@@ -274,6 +274,32 @@ impl OutboundManager {
                         .stream_handler(stream)
                         .build()
                 }
+                #[cfg(feature = "outbound-jls")]
+                "jls" => {
+                    let settings =
+                        config::JlsOutboundSettings::parse_from_bytes(&outbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
+                        let server_name = if settings.server_name.is_empty() {
+                            return Err(anyhow!("jls: empty server name is now allowed"));
+                        } else {
+                            settings.server_name.clone()
+                        };
+    
+                        if settings.pwd.is_empty() {
+                            return Err(anyhow!("jls: empty pwd"));
+                        }
+                    let stream = Box::new(jls::outbound::StreamHandler::new(
+                        server_name,
+                        settings.alpn.clone(),
+                        settings.zero_rtt,
+                        settings.pwd,
+                        settings.iv,
+                    )?);
+                    HandlerBuilder::default()
+                        .tag(tag.clone())
+                        .stream_handler(stream)
+                        .build()
+                }
                 #[cfg(feature = "outbound-ws")]
                 "ws" => {
                     let settings =

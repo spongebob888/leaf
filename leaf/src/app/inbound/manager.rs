@@ -15,6 +15,8 @@ use crate::Runner;
 use crate::proxy::amux;
 #[cfg(feature = "inbound-http")]
 use crate::proxy::http;
+#[cfg(feature = "inbound-jls")]
+use crate::proxy::jls;
 #[cfg(feature = "inbound-quic")]
 use crate::proxy::quic;
 #[cfg(feature = "inbound-quic-jls")]
@@ -179,6 +181,26 @@ impl InboundManager {
                         tag.clone(),
                         None,
                         Some(datagram),
+                    ));
+                    handlers.insert(tag.clone(), handler);
+                }
+                #[cfg(feature = "inbound-jls")]
+                "jls" => {
+                    let settings = config::JlsInboundSettings::parse_from_bytes(&inbound.settings)?;
+                    let stream = Arc::new(jls::inbound::StreamHandler::new(
+                        settings.certificate.clone(),
+                        settings.certificate_key.clone(),
+                        settings.alpn.clone(),
+                        settings.zero_rtt,
+                        settings.pwd.clone(),
+                        settings.iv,
+                        settings.upstream_url.clone(),
+                        settings.sni_proxy,
+                    )?);
+                    let handler = Arc::new(proxy::inbound::Handler::new(
+                        tag.clone(),
+                        Some(stream),
+                        None,
                     ));
                     handlers.insert(tag.clone(), handler);
                 }

@@ -1544,6 +1544,188 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
 }
 
 #[derive(PartialEq,Clone,Default,Debug)]
+// @@protoc_insertion_point(message:JlsInboundSettings)
+pub struct JlsInboundSettings {
+    // message fields
+    // @@protoc_insertion_point(field:JlsInboundSettings.certificate)
+    pub certificate: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsInboundSettings.certificate_key)
+    pub certificate_key: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsInboundSettings.pwd)
+    pub pwd: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsInboundSettings.iv)
+    pub iv: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsInboundSettings.upstream_url)
+    pub upstream_url: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsInboundSettings.zero_rtt)
+    pub zero_rtt: bool,
+    // @@protoc_insertion_point(field:JlsInboundSettings.alpn)
+    pub alpn: ::std::vec::Vec<::std::string::String>,
+    // @@protoc_insertion_point(field:JlsInboundSettings.sni_proxy)
+    pub sni_proxy: ::std::vec::Vec<SniProxyEntry>,
+    // special fields
+    // @@protoc_insertion_point(special_field:JlsInboundSettings.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a JlsInboundSettings {
+    fn default() -> &'a JlsInboundSettings {
+        <JlsInboundSettings as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl JlsInboundSettings {
+    pub fn new() -> JlsInboundSettings {
+        ::std::default::Default::default()
+    }
+}
+
+impl ::protobuf::Message for JlsInboundSettings {
+    const NAME: &'static str = "JlsInboundSettings";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.certificate = is.read_string()?;
+                },
+                18 => {
+                    self.certificate_key = is.read_string()?;
+                },
+                26 => {
+                    self.pwd = is.read_string()?;
+                },
+                34 => {
+                    self.iv = is.read_string()?;
+                },
+                42 => {
+                    self.upstream_url = is.read_string()?;
+                },
+                48 => {
+                    self.zero_rtt = is.read_bool()?;
+                },
+                66 => {
+                    self.alpn.push(is.read_string()?);
+                },
+                74 => {
+                    self.sni_proxy.push(is.read_message()?);
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if !self.certificate.is_empty() {
+            my_size += ::protobuf::rt::string_size(1, &self.certificate);
+        }
+        if !self.certificate_key.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.certificate_key);
+        }
+        if !self.pwd.is_empty() {
+            my_size += ::protobuf::rt::string_size(3, &self.pwd);
+        }
+        if !self.iv.is_empty() {
+            my_size += ::protobuf::rt::string_size(4, &self.iv);
+        }
+        if !self.upstream_url.is_empty() {
+            my_size += ::protobuf::rt::string_size(5, &self.upstream_url);
+        }
+        if self.zero_rtt != false {
+            my_size += 1 + 1;
+        }
+        for value in &self.alpn {
+            my_size += ::protobuf::rt::string_size(8, &value);
+        };
+        for value in &self.sni_proxy {
+            let len = value.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        };
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if !self.certificate.is_empty() {
+            os.write_string(1, &self.certificate)?;
+        }
+        if !self.certificate_key.is_empty() {
+            os.write_string(2, &self.certificate_key)?;
+        }
+        if !self.pwd.is_empty() {
+            os.write_string(3, &self.pwd)?;
+        }
+        if !self.iv.is_empty() {
+            os.write_string(4, &self.iv)?;
+        }
+        if !self.upstream_url.is_empty() {
+            os.write_string(5, &self.upstream_url)?;
+        }
+        if self.zero_rtt != false {
+            os.write_bool(6, self.zero_rtt)?;
+        }
+        for v in &self.alpn {
+            os.write_string(8, &v)?;
+        };
+        for v in &self.sni_proxy {
+            ::protobuf::rt::write_message_field_with_cached_size(9, v, os)?;
+        };
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> JlsInboundSettings {
+        JlsInboundSettings::new()
+    }
+
+    fn clear(&mut self) {
+        self.certificate.clear();
+        self.certificate_key.clear();
+        self.pwd.clear();
+        self.iv.clear();
+        self.upstream_url.clear();
+        self.zero_rtt = false;
+        self.alpn.clear();
+        self.sni_proxy.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static JlsInboundSettings {
+        static instance: JlsInboundSettings = JlsInboundSettings {
+            certificate: ::std::string::String::new(),
+            certificate_key: ::std::string::String::new(),
+            pwd: ::std::string::String::new(),
+            iv: ::std::string::String::new(),
+            upstream_url: ::std::string::String::new(),
+            zero_rtt: false,
+            alpn: ::std::vec::Vec::new(),
+            sni_proxy: ::std::vec::Vec::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+#[derive(PartialEq,Clone,Default,Debug)]
 // @@protoc_insertion_point(message:TlsInboundSettings)
 pub struct TlsInboundSettings {
     // message fields
@@ -3384,6 +3566,174 @@ impl ::protobuf::Message for QuicJlsOutboundSettings {
             iv: ::std::string::String::new(),
             zero_rtt: false,
             congestion_controller: ::std::string::String::new(),
+            alpn: ::std::vec::Vec::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+#[derive(PartialEq,Clone,Default,Debug)]
+// @@protoc_insertion_point(message:JlsOutboundSettings)
+pub struct JlsOutboundSettings {
+    // message fields
+    // @@protoc_insertion_point(field:JlsOutboundSettings.address)
+    pub address: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsOutboundSettings.port)
+    pub port: u32,
+    // @@protoc_insertion_point(field:JlsOutboundSettings.server_name)
+    pub server_name: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsOutboundSettings.pwd)
+    pub pwd: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsOutboundSettings.iv)
+    pub iv: ::std::string::String,
+    // @@protoc_insertion_point(field:JlsOutboundSettings.zero_rtt)
+    pub zero_rtt: bool,
+    // @@protoc_insertion_point(field:JlsOutboundSettings.alpn)
+    pub alpn: ::std::vec::Vec<::std::string::String>,
+    // special fields
+    // @@protoc_insertion_point(special_field:JlsOutboundSettings.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a JlsOutboundSettings {
+    fn default() -> &'a JlsOutboundSettings {
+        <JlsOutboundSettings as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl JlsOutboundSettings {
+    pub fn new() -> JlsOutboundSettings {
+        ::std::default::Default::default()
+    }
+}
+
+impl ::protobuf::Message for JlsOutboundSettings {
+    const NAME: &'static str = "JlsOutboundSettings";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.address = is.read_string()?;
+                },
+                16 => {
+                    self.port = is.read_uint32()?;
+                },
+                26 => {
+                    self.server_name = is.read_string()?;
+                },
+                34 => {
+                    self.pwd = is.read_string()?;
+                },
+                42 => {
+                    self.iv = is.read_string()?;
+                },
+                48 => {
+                    self.zero_rtt = is.read_bool()?;
+                },
+                66 => {
+                    self.alpn.push(is.read_string()?);
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if !self.address.is_empty() {
+            my_size += ::protobuf::rt::string_size(1, &self.address);
+        }
+        if self.port != 0 {
+            my_size += ::protobuf::rt::uint32_size(2, self.port);
+        }
+        if !self.server_name.is_empty() {
+            my_size += ::protobuf::rt::string_size(3, &self.server_name);
+        }
+        if !self.pwd.is_empty() {
+            my_size += ::protobuf::rt::string_size(4, &self.pwd);
+        }
+        if !self.iv.is_empty() {
+            my_size += ::protobuf::rt::string_size(5, &self.iv);
+        }
+        if self.zero_rtt != false {
+            my_size += 1 + 1;
+        }
+        for value in &self.alpn {
+            my_size += ::protobuf::rt::string_size(8, &value);
+        };
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if !self.address.is_empty() {
+            os.write_string(1, &self.address)?;
+        }
+        if self.port != 0 {
+            os.write_uint32(2, self.port)?;
+        }
+        if !self.server_name.is_empty() {
+            os.write_string(3, &self.server_name)?;
+        }
+        if !self.pwd.is_empty() {
+            os.write_string(4, &self.pwd)?;
+        }
+        if !self.iv.is_empty() {
+            os.write_string(5, &self.iv)?;
+        }
+        if self.zero_rtt != false {
+            os.write_bool(6, self.zero_rtt)?;
+        }
+        for v in &self.alpn {
+            os.write_string(8, &v)?;
+        };
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> JlsOutboundSettings {
+        JlsOutboundSettings::new()
+    }
+
+    fn clear(&mut self) {
+        self.address.clear();
+        self.port = 0;
+        self.server_name.clear();
+        self.pwd.clear();
+        self.iv.clear();
+        self.zero_rtt = false;
+        self.alpn.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static JlsOutboundSettings {
+        static instance: JlsOutboundSettings = JlsOutboundSettings {
+            address: ::std::string::String::new(),
+            port: 0,
+            server_name: ::std::string::String::new(),
+            pwd: ::std::string::String::new(),
+            iv: ::std::string::String::new(),
+            zero_rtt: false,
             alpn: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };

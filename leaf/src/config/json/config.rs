@@ -74,6 +74,22 @@ pub struct QuicJlsInboundSettings {
     pub congestion_controller: Option<String>,
     pub sni_proxy: Option<Vec<SniProxyEntry>>,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct JlsInboundSettings {
+    pub certificate: Option<String>,
+    #[serde(rename = "certificateKey")]
+    pub certificate_key: Option<String>,
+    pub pwd: Option<String>,
+    pub iv: Option<String>,
+    pub alpn: Option<Vec<String>>,
+    #[serde(rename = "zeroRtt")]
+    pub zero_rtt: Option<bool>,
+    #[serde(rename = "upstreamUrl")]
+    pub upstream_url: Option<String>,
+    pub sni_proxy: Option<Vec<SniProxyEntry>>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SniProxyEntry {
     #[serde(rename = "serverName")]
@@ -215,6 +231,19 @@ pub struct QuicJlsOutboundSettings {
     pub zero_rtt: Option<bool>,
     #[serde(rename = "congestionController")]
     pub congestion_controller: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct JlsOutboundSettings {
+    pub address: Option<String>,
+    pub port: Option<u16>,
+    #[serde(rename = "serverName")]
+    pub server_name: Option<String>,
+    pub pwd: Option<String>,
+    pub iv: Option<String>,
+    pub alpn: Option<Vec<String>>,
+    #[serde(rename = "zeroRtt")]
+    pub zero_rtt: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -565,6 +594,67 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                         settings.upstream_url = ext_upstream_url.clone();
                     } else {
                         panic!("[quic-jls] upstream address empty");
+                    }
+                    if let Some(sni_proxy) = ext_settings.sni_proxy {
+                        settings.sni_proxy = sni_proxy
+                            .iter()
+                            .map(|x| internal::SniProxyEntry {
+                                server_name: x.server_name.clone(),
+                                upstream_url: x.upstream_url.clone(),
+                                ..Default::default()
+                            })
+                            .collect();
+                    }
+
+                    let settings = settings.write_to_bytes().unwrap();
+                    inbound.settings = settings;
+                    inbounds.push(inbound);
+                }
+                "jls" => {
+                    let mut settings = internal::JlsInboundSettings::new();
+                    let ext_settings: JlsInboundSettings =
+                        serde_json::from_str(ext_inbound.settings.as_ref().unwrap().get()).unwrap();
+                    if let Some(ext_certificate) = ext_settings.certificate {
+                        let cert = Path::new(&ext_certificate);
+                        if cert.is_absolute() {
+                            settings.certificate = cert.to_string_lossy().to_string();
+                        } else {
+                            let asset_loc = Path::new(&*crate::option::ASSET_LOCATION);
+                            let path = asset_loc.join(cert).to_string_lossy().to_string();
+                            settings.certificate = path;
+                        }
+                    }
+                    if let Some(ext_certificate_key) = ext_settings.certificate_key {
+                        let key = Path::new(&ext_certificate_key);
+                        if key.is_absolute() {
+                            settings.certificate_key = key.to_string_lossy().to_string();
+                        } else {
+                            let asset_loc = Path::new(&*crate::option::ASSET_LOCATION);
+                            let path = asset_loc.join(key).to_string_lossy().to_string();
+                            settings.certificate_key = path;
+                        }
+                    }
+                    if let Some(ext_alpns) = ext_settings.alpn {
+                        settings.alpn = ext_alpns.clone();
+                    } else {
+                        settings.alpn = vec!["h2".to_string(), "http/1.1".to_string()];
+                    }
+                    if let Some(ext_zero_rtt) = ext_settings.zero_rtt {
+                        settings.zero_rtt = ext_zero_rtt.clone();
+                    } else {
+                        settings.zero_rtt = false;
+                    }
+                    if let Some(ext_pwd) = ext_settings.pwd {
+                        settings.pwd = ext_pwd.clone();
+                        assert!(!ext_pwd.is_empty(), "[jls] empty pwd");
+                    }
+                    if let Some(ext_iv) = ext_settings.iv {
+                        settings.iv = ext_iv.clone();
+                    }
+                    if let Some(ext_upstream_url) = ext_settings.upstream_url {
+                        settings.upstream_url = ext_upstream_url.clone();
+                    } else {
+                        panic!("[jls] upstream address empty");
                     }
                     if let Some(sni_proxy) = ext_settings.sni_proxy {
                         settings.sni_proxy = sni_proxy
@@ -1007,6 +1097,44 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                         } else {
                             settings.congestion_controller = "bbr".into();
                         }
+                    }
+                    let settings = settings.write_to_bytes().unwrap();
+                    outbound.settings = settings;
+                    outbounds.push(outbound);
+                }
+                "jls" => {
+                    let mut settings = internal::JlsOutboundSettings::new();
+                    if ext_outbound.settings.is_some() {
+                        let ext_settings: JlsOutboundSettings =
+                            serde_json::from_str(ext_outbound.settings.as_ref().unwrap().get())
+                                .unwrap();
+                        if let Some(ext_address) = ext_settings.address {
+                            settings.address = ext_address;
+                        }
+                        if let Some(ext_port) = ext_settings.port {
+                            settings.port = ext_port as u32;
+                        }
+                        if let Some(ext_server_name) = ext_settings.server_name {
+                            settings.server_name = ext_server_name;
+                        }
+                        if let Some(ext_alpns) = ext_settings.alpn {
+                            settings.alpn = ext_alpns.clone();
+                        } else {
+                            settings.alpn = vec!["h2".to_string(), "http/1.1".to_string()];
+                        }
+                        if let Some(ext_zero_rtt) = ext_settings.zero_rtt {
+                            settings.zero_rtt = ext_zero_rtt.clone();
+                        } else {
+                            settings.zero_rtt = false;
+                        }
+                        if let Some(ext_pwd) = ext_settings.pwd {
+                            settings.pwd = ext_pwd.clone();
+                            assert!(!ext_pwd.is_empty());
+                        }
+                        if let Some(ext_iv) = ext_settings.iv {
+                            settings.iv = ext_iv.clone();
+                        }
+
                     }
                     let settings = settings.write_to_bytes().unwrap();
                     outbound.settings = settings;

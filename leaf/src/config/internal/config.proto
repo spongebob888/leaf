@@ -89,6 +89,17 @@ message QuicJlsInboundSettings {
 	repeated SniProxyEntry sni_proxy = 9;
 }
 
+message JlsInboundSettings {
+	string certificate = 1;
+	string certificate_key = 2;
+	string pwd = 3;
+	string iv = 4;
+	string upstream_url = 5;
+	bool zero_rtt = 6;
+	repeated string alpn = 8;
+	repeated SniProxyEntry sni_proxy = 9;
+}
+
 message TlsInboundSettings {
 	string certificate = 1;
 	string certificate_key = 2;
@@ -183,6 +194,16 @@ message QuicJlsOutboundSettings {
 	string iv = 5;
 	bool zero_rtt = 6;
 	string congestion_controller = 7;
+	repeated string alpn = 8;
+}
+
+message JlsOutboundSettings {
+	string address = 1;
+	uint32 port = 2;
+	string server_name = 3;
+	string pwd = 4;
+	string iv = 5;
+	bool zero_rtt = 6;
 	repeated string alpn = 8;
 }
 

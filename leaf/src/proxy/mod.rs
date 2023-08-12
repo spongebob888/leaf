@@ -85,6 +85,9 @@ pub mod ws;
 #[cfg(any(feature = "inbound-quic-jls", feature = "outbound-quic-jls"))]
 pub mod quic_jls;
 
+#[cfg(any(feature = "inbound-jls", feature = "outbound-jls"))]
+pub mod jls;
+
 pub use datagram::{
     SimpleInboundDatagram, SimpleInboundDatagramRecvHalf, SimpleInboundDatagramSendHalf,
     SimpleOutboundDatagram, SimpleOutboundDatagramRecvHalf, SimpleOutboundDatagramSendHalf,
