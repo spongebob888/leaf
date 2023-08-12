@@ -235,8 +235,6 @@ pub struct QuicJlsOutboundSettings {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct JlsOutboundSettings {
-    pub address: Option<String>,
-    pub port: Option<u16>,
     #[serde(rename = "serverName")]
     pub server_name: Option<String>,
     pub pwd: Option<String>,
@@ -1108,12 +1106,6 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                         let ext_settings: JlsOutboundSettings =
                             serde_json::from_str(ext_outbound.settings.as_ref().unwrap().get())
                                 .unwrap();
-                        if let Some(ext_address) = ext_settings.address {
-                            settings.address = ext_address;
-                        }
-                        if let Some(ext_port) = ext_settings.port {
-                            settings.port = ext_port as u32;
-                        }
                         if let Some(ext_server_name) = ext_settings.server_name {
                             settings.server_name = ext_server_name;
                         }

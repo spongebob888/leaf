@@ -37,11 +37,9 @@ fn test_tls_trojan() {
                 "protocol": "jls",
                 "tag": "jls",
                 "settings": {
-                    "address": "127.0.0.1",
-                    "port": 3001,
                     "serverName": "codepen.io",
                     "alpn": [
-                        "h"
+                        "h2"
                     ],
                     "pwd": "user_pwd",
                     "iv": "user_iv",
@@ -52,7 +50,9 @@ fn test_tls_trojan() {
                 "protocol": "trojan",
                 "tag": "trojan",
                 "settings": {
-                    "password": "password"
+                    "password": "password",
+                    "address": "127.0.0.1",
+                    "port": 3001
                 }
             }
         ]
@@ -85,7 +85,7 @@ fn test_tls_trojan() {
                     "upstreamUrl":"https://codepen.io:443",
                     "pwd": "user_pwd",
                     "iv": "user_iv",
-                    "zeroRtt": true,
+                    "zeroRtt": true
                 }
             },
             {
@@ -135,7 +135,7 @@ fn test_tls_trojan() {
                     ],
                     "pwd": "user_pwd",
                     "iv": "user_iv",
-                    "zeroRtt": false,
+                    "zeroRtt": false
                 }
             },
             {
@@ -175,7 +175,7 @@ fn test_tls_trojan() {
                     "upstreamUrl":"https://codepen.io:443",
                     "pwd": "user_pwd",
                     "iv": "user_iv",
-                    "zeroRtt": false,
+                    "zeroRtt": false
                     
                 }
             },

@@ -3577,10 +3577,6 @@ impl ::protobuf::Message for QuicJlsOutboundSettings {
 // @@protoc_insertion_point(message:JlsOutboundSettings)
 pub struct JlsOutboundSettings {
     // message fields
-    // @@protoc_insertion_point(field:JlsOutboundSettings.address)
-    pub address: ::std::string::String,
-    // @@protoc_insertion_point(field:JlsOutboundSettings.port)
-    pub port: u32,
     // @@protoc_insertion_point(field:JlsOutboundSettings.server_name)
     pub server_name: ::std::string::String,
     // @@protoc_insertion_point(field:JlsOutboundSettings.pwd)
@@ -3618,12 +3614,6 @@ impl ::protobuf::Message for JlsOutboundSettings {
     fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
-                10 => {
-                    self.address = is.read_string()?;
-                },
-                16 => {
-                    self.port = is.read_uint32()?;
-                },
                 26 => {
                     self.server_name = is.read_string()?;
                 },
@@ -3651,12 +3641,6 @@ impl ::protobuf::Message for JlsOutboundSettings {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if !self.address.is_empty() {
-            my_size += ::protobuf::rt::string_size(1, &self.address);
-        }
-        if self.port != 0 {
-            my_size += ::protobuf::rt::uint32_size(2, self.port);
-        }
         if !self.server_name.is_empty() {
             my_size += ::protobuf::rt::string_size(3, &self.server_name);
         }
@@ -3678,12 +3662,6 @@ impl ::protobuf::Message for JlsOutboundSettings {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.address.is_empty() {
-            os.write_string(1, &self.address)?;
-        }
-        if self.port != 0 {
-            os.write_uint32(2, self.port)?;
-        }
         if !self.server_name.is_empty() {
             os.write_string(3, &self.server_name)?;
         }
@@ -3716,8 +3694,6 @@ impl ::protobuf::Message for JlsOutboundSettings {
     }
 
     fn clear(&mut self) {
-        self.address.clear();
-        self.port = 0;
         self.server_name.clear();
         self.pwd.clear();
         self.iv.clear();
@@ -3728,8 +3704,6 @@ impl ::protobuf::Message for JlsOutboundSettings {
 
     fn default_instance() -> &'static JlsOutboundSettings {
         static instance: JlsOutboundSettings = JlsOutboundSettings {
-            address: ::std::string::String::new(),
-            port: 0,
             server_name: ::std::string::String::new(),
             pwd: ::std::string::String::new(),
             iv: ::std::string::String::new(),

@@ -198,8 +198,6 @@ message QuicJlsOutboundSettings {
 }
 
 message JlsOutboundSettings {
-	string address = 1;
-	uint32 port = 2;
 	string server_name = 3;
 	string pwd = 4;
 	string iv = 5;

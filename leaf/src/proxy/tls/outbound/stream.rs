@@ -159,12 +159,14 @@ impl OutboundStreamHandler for Handler {
             #[cfg(feature = "rustls-tls")]
             {
                 let connector = TlsConnector::from(self.tls_config.clone());
+
                 let domain = ServerName::try_from(name.as_str()).map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,
                         format!("invalid tls server name {}: {}", &name, e),
                     )
                 })?;
+
                 let tls_stream = connector
                     .connect(domain, stream)
                     .map_err(|e| {

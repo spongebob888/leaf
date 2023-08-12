@@ -9,10 +9,9 @@ use {
     std::sync::Arc,
     tokio_rustls_jls::{
         rustls::{ClientConfig, JlsConfig, OwnedTrustAnchor, RootCertStore, ServerName},
-     TlsConnector,
+        TlsConnector,
     },
 };
-
 
 use crate::{proxy::*, session::Session};
 
@@ -56,16 +55,16 @@ impl Handler {
     ) -> Result<Self> {
         {
             let mut root_cert_store = RootCertStore::empty();
-                root_cert_store.add_server_trust_anchors(
-                    webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
-                        OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            ta.subject,
-                            ta.spki,
-                            ta.name_constraints,
-                        )
-                    }),
-                );
-            
+            root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                |ta| {
+                    OwnedTrustAnchor::from_subject_spki_name_constraints(
+                        ta.subject,
+                        ta.spki,
+                        ta.name_constraints,
+                    )
+                },
+            ));
+
             let mut config = ClientConfig::builder()
                 .with_safe_defaults()
                 .with_root_certificates(root_cert_store)
@@ -125,10 +124,14 @@ impl OutboundStreamHandler for Handler {
             match tls_stream.is_jls() {
                 Some(false) => {
                     // Make some http request
-                    return Err(io::Error::new(io::ErrorKind::Other, "jls authenticated failed"));
-
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "jls authenticated failed",
+                    ));
                 }
-                Some(true) => {}
+                Some(true) => {
+                    log::debug!("[jls] jls authenticated");
+                }
                 None => {
                     return Err(io::Error::new(io::ErrorKind::Other, "jls not handshaked"));
                 }
