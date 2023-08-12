@@ -1246,6 +1246,109 @@ impl ::protobuf::Message for QuicInboundSettings {
 }
 
 #[derive(PartialEq,Clone,Default,Debug)]
+// @@protoc_insertion_point(message:SniProxyEntry)
+pub struct SniProxyEntry {
+    // message fields
+    // @@protoc_insertion_point(field:SniProxyEntry.server_name)
+    pub server_name: ::std::string::String,
+    // @@protoc_insertion_point(field:SniProxyEntry.upstream_url)
+    pub upstream_url: ::std::string::String,
+    // special fields
+    // @@protoc_insertion_point(special_field:SniProxyEntry.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a SniProxyEntry {
+    fn default() -> &'a SniProxyEntry {
+        <SniProxyEntry as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl SniProxyEntry {
+    pub fn new() -> SniProxyEntry {
+        ::std::default::Default::default()
+    }
+}
+
+impl ::protobuf::Message for SniProxyEntry {
+    const NAME: &'static str = "SniProxyEntry";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.server_name = is.read_string()?;
+                },
+                18 => {
+                    self.upstream_url = is.read_string()?;
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if !self.server_name.is_empty() {
+            my_size += ::protobuf::rt::string_size(1, &self.server_name);
+        }
+        if !self.upstream_url.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.upstream_url);
+        }
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if !self.server_name.is_empty() {
+            os.write_string(1, &self.server_name)?;
+        }
+        if !self.upstream_url.is_empty() {
+            os.write_string(2, &self.upstream_url)?;
+        }
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> SniProxyEntry {
+        SniProxyEntry::new()
+    }
+
+    fn clear(&mut self) {
+        self.server_name.clear();
+        self.upstream_url.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static SniProxyEntry {
+        static instance: SniProxyEntry = SniProxyEntry {
+            server_name: ::std::string::String::new(),
+            upstream_url: ::std::string::String::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+#[derive(PartialEq,Clone,Default,Debug)]
 // @@protoc_insertion_point(message:QuicJlsInboundSettings)
 pub struct QuicJlsInboundSettings {
     // message fields
@@ -1257,14 +1360,16 @@ pub struct QuicJlsInboundSettings {
     pub pwd: ::std::string::String,
     // @@protoc_insertion_point(field:QuicJlsInboundSettings.iv)
     pub iv: ::std::string::String,
-    // @@protoc_insertion_point(field:QuicJlsInboundSettings.upstream_addr)
-    pub upstream_addr: ::std::string::String,
+    // @@protoc_insertion_point(field:QuicJlsInboundSettings.upstream_url)
+    pub upstream_url: ::std::string::String,
     // @@protoc_insertion_point(field:QuicJlsInboundSettings.zero_rtt)
     pub zero_rtt: bool,
     // @@protoc_insertion_point(field:QuicJlsInboundSettings.congestion_controller)
     pub congestion_controller: ::std::string::String,
     // @@protoc_insertion_point(field:QuicJlsInboundSettings.alpn)
     pub alpn: ::std::vec::Vec<::std::string::String>,
+    // @@protoc_insertion_point(field:QuicJlsInboundSettings.sni_proxy)
+    pub sni_proxy: ::std::vec::Vec<SniProxyEntry>,
     // special fields
     // @@protoc_insertion_point(special_field:QuicJlsInboundSettings.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -1305,7 +1410,7 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
                     self.iv = is.read_string()?;
                 },
                 42 => {
-                    self.upstream_addr = is.read_string()?;
+                    self.upstream_url = is.read_string()?;
                 },
                 48 => {
                     self.zero_rtt = is.read_bool()?;
@@ -1315,6 +1420,9 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
                 },
                 66 => {
                     self.alpn.push(is.read_string()?);
+                },
+                74 => {
+                    self.sni_proxy.push(is.read_message()?);
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -1340,8 +1448,8 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
         if !self.iv.is_empty() {
             my_size += ::protobuf::rt::string_size(4, &self.iv);
         }
-        if !self.upstream_addr.is_empty() {
-            my_size += ::protobuf::rt::string_size(5, &self.upstream_addr);
+        if !self.upstream_url.is_empty() {
+            my_size += ::protobuf::rt::string_size(5, &self.upstream_url);
         }
         if self.zero_rtt != false {
             my_size += 1 + 1;
@@ -1351,6 +1459,10 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
         }
         for value in &self.alpn {
             my_size += ::protobuf::rt::string_size(8, &value);
+        };
+        for value in &self.sni_proxy {
+            let len = value.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         };
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -1370,8 +1482,8 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
         if !self.iv.is_empty() {
             os.write_string(4, &self.iv)?;
         }
-        if !self.upstream_addr.is_empty() {
-            os.write_string(5, &self.upstream_addr)?;
+        if !self.upstream_url.is_empty() {
+            os.write_string(5, &self.upstream_url)?;
         }
         if self.zero_rtt != false {
             os.write_bool(6, self.zero_rtt)?;
@@ -1381,6 +1493,9 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
         }
         for v in &self.alpn {
             os.write_string(8, &v)?;
+        };
+        for v in &self.sni_proxy {
+            ::protobuf::rt::write_message_field_with_cached_size(9, v, os)?;
         };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -1403,10 +1518,11 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
         self.certificate_key.clear();
         self.pwd.clear();
         self.iv.clear();
-        self.upstream_addr.clear();
+        self.upstream_url.clear();
         self.zero_rtt = false;
         self.congestion_controller.clear();
         self.alpn.clear();
+        self.sni_proxy.clear();
         self.special_fields.clear();
     }
 
@@ -1416,10 +1532,11 @@ impl ::protobuf::Message for QuicJlsInboundSettings {
             certificate_key: ::std::string::String::new(),
             pwd: ::std::string::String::new(),
             iv: ::std::string::String::new(),
-            upstream_addr: ::std::string::String::new(),
+            upstream_url: ::std::string::String::new(),
             zero_rtt: false,
             congestion_controller: ::std::string::String::new(),
             alpn: ::std::vec::Vec::new(),
+            sni_proxy: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance

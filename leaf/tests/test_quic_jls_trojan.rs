@@ -81,7 +81,7 @@ fn test_quic_jls_trojan() {
                     "alpn": [
                         "h3"
                     ],
-                    "upstreamAddr":"codepen.io:443",
+                    "upstreamUrl":"codepen.io:443",
                     "pwd": "user_pwd",
                     "iv": "user_iv",
                     "zeroRtt": true,
@@ -172,7 +172,7 @@ fn test_quic_jls_trojan() {
                 "settings": {
                     "certificate": "cert.pem",
                     "certificateKey": "key.pem",
-                    "upstreamAddr":"codepen.io:443",
+                    "upstreamUrl":"codepen.io:443",
                     "alpn": [
                         "h3"
                     ],

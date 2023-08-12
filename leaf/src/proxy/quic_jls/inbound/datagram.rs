@@ -9,10 +9,10 @@ use futures::stream::Stream;
 use futures::task::{Context, Poll};
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
-use rustls_jls::JlsConfig;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
 
+use crate::config::SniProxyEntry;
 use crate::{proxy::*, session::Session};
 
 use super::QuicProxyStream;
@@ -84,12 +84,13 @@ impl Handler {
         zero_rtt: bool,
         jls_pwd: String,
         jls_iv: String,
-        upstream_addr: String,
+        upstream_url: String,
         congestion_ctrl: String,
+        sni_proxy: Vec<SniProxyEntry>
     ) -> Result<Self> {
         let (cert, key) = if certificate.is_empty() && certificate_key.is_empty() {
             let cert =
-                rcgen::generate_simple_self_signed(vec![upstream_addr.clone().into()]).unwrap();
+                rcgen::generate_simple_self_signed(vec![upstream_url.clone().into()]).unwrap();
             let cert_der = cert.serialize_der().unwrap();
             let priv_key = cert.serialize_private_key_der();
             let priv_key = rustls::PrivateKey(priv_key);
@@ -152,7 +153,11 @@ impl Handler {
         if jls_pwd.is_empty() {
             return Err(anyhow!("quic-jls: empty jls pwd"));
         }
-        crypto.jls_config = rustls::JlsServerConfig::new(&jls_pwd, &jls_iv,&upstream_addr)?;
+        crypto.jls_config = rustls::JlsServerConfig::new(&jls_pwd, &jls_iv,&upstream_url)?;
+        for sni_entry in sni_proxy {
+            crypto.jls_config.push_sni(&sni_entry.server_name, &sni_entry.upstream_url)?
+        }
+
         for alpn in alpns {
             crypto.alpn_protocols.push(alpn.as_bytes().to_vec());
         }

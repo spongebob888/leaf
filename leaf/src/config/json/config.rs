@@ -68,10 +68,18 @@ pub struct QuicJlsInboundSettings {
     pub alpn: Option<Vec<String>>,
     #[serde(rename = "zeroRtt")]
     pub zero_rtt: Option<bool>,
-    #[serde(rename = "upstreamAddr")]
-    pub upstream_addr: Option<String>,
+    #[serde(rename = "upstreamUrl")]
+    pub upstream_url: Option<String>,
     #[serde(rename = "congestionController")]
     pub congestion_controller: Option<String>,
+    pub sni_proxy: Option<Vec<SniProxyEntry>>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SniProxyEntry {
+    #[serde(rename = "serverName")]
+    pub server_name: String,
+    #[serde(rename = "upstreamUrl")]
+    pub upstream_url: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -533,35 +541,42 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                     }
                     if let Some(ext_alpns) = ext_settings.alpn {
                         settings.alpn = ext_alpns.clone();
-                    }
-                    else{
-                        settings.alpn = vec!["h3".to_string(),"h3-29".to_string()];
+                    } else {
+                        settings.alpn = vec!["h3".to_string(), "h3-29".to_string()];
                     }
                     if let Some(ext_zero_rtt) = ext_settings.zero_rtt {
                         settings.zero_rtt = ext_zero_rtt.clone();
-                    }
-                    else {
+                    } else {
                         settings.zero_rtt = false;
                     }
                     if let Some(ext_pwd) = ext_settings.pwd {
                         settings.pwd = ext_pwd.clone();
-                        assert!(!ext_pwd.is_empty(),"[quic-jls] empty pwd");
+                        assert!(!ext_pwd.is_empty(), "[quic-jls] empty pwd");
                     }
                     if let Some(ext_iv) = ext_settings.iv {
                         settings.iv = ext_iv.clone();
                     }
                     if let Some(ext_congestion_controller) = ext_settings.congestion_controller {
                         settings.congestion_controller = ext_congestion_controller.clone();
-                    }
-                    else{
+                    } else {
                         settings.congestion_controller = "bbr".into();
                     }
-                    if let Some(ext_upstream_addr) = ext_settings.upstream_addr {
-                        settings.upstream_addr = ext_upstream_addr.clone();
-                    }
-                    else{
+                    if let Some(ext_upstream_url) = ext_settings.upstream_url {
+                        settings.upstream_url = ext_upstream_url.clone();
+                    } else {
                         panic!("[quic-jls] upstream address empty");
                     }
+                    if let Some(sni_proxy) = ext_settings.sni_proxy {
+                        settings.sni_proxy = sni_proxy
+                            .iter()
+                            .map(|x| internal::SniProxyEntry {
+                                server_name: x.server_name.clone(),
+                                upstream_url: x.upstream_url.clone(),
+                                ..Default::default()
+                            })
+                            .collect();
+                    }
+
                     let settings = settings.write_to_bytes().unwrap();
                     inbound.settings = settings;
                     inbounds.push(inbound);
@@ -948,7 +963,7 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                         }
                         if let Some(ext_alpns) = ext_settings.alpn {
                             settings.alpn = ext_alpns.clone();
-                        }  
+                        }
                     }
                     let settings = settings.write_to_bytes().unwrap();
                     outbound.settings = settings;
@@ -971,14 +986,12 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                         }
                         if let Some(ext_alpns) = ext_settings.alpn {
                             settings.alpn = ext_alpns.clone();
-                        }
-                        else{
-                            settings.alpn = vec!["h3".to_string(),"h3-29".to_string()];
+                        } else {
+                            settings.alpn = vec!["h3".to_string(), "h3-29".to_string()];
                         }
                         if let Some(ext_zero_rtt) = ext_settings.zero_rtt {
                             settings.zero_rtt = ext_zero_rtt.clone();
-                        }
-                        else {
+                        } else {
                             settings.zero_rtt = false;
                         }
                         if let Some(ext_pwd) = ext_settings.pwd {
@@ -988,10 +1001,10 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                         if let Some(ext_iv) = ext_settings.iv {
                             settings.iv = ext_iv.clone();
                         }
-                        if let Some(ext_congestion_controller) = ext_settings.congestion_controller {
+                        if let Some(ext_congestion_controller) = ext_settings.congestion_controller
+                        {
                             settings.congestion_controller = ext_congestion_controller.clone();
-                        }
-                        else{
+                        } else {
                             settings.congestion_controller = "bbr".into();
                         }
                     }

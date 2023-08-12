@@ -171,8 +171,9 @@ impl InboundManager {
                         settings.zero_rtt,
                         settings.pwd.clone(),
                         settings.iv,
-                        settings.upstream_addr.clone(),
+                        settings.upstream_url.clone(),
                         settings.congestion_controller.clone(),
+                        settings.sni_proxy,
                     )?);
                     let handler = Arc::new(proxy::inbound::Handler::new(
                         tag.clone(),
