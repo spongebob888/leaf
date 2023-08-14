@@ -1,9 +1,18 @@
-use std::io;
+use std::{io, pin::Pin, task::Poll};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::TryFutureExt;
+use futures_util::FutureExt;
 use log::*;
+use ring::digest::Context;
+use tokio::io::AsyncReadExt;
+use tokio_rustls_jls::client::{self, JlsHandler};
+use tokio_rustls_jls::rustls::cipher_suite::{
+    TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384, TLS13_CHACHA20_POLY1305_SHA256,
+};
+use tokio_rustls_jls::rustls::version::TLS13;
+use tokio_rustls_jls::TlsStream;
 
 use {
     std::sync::Arc,
@@ -43,6 +52,7 @@ mod dangerous {
 pub struct Handler {
     server_name: String,
     tls_config: Arc<ClientConfig>,
+    zero_rtt: bool,
 }
 
 impl Handler {
@@ -66,7 +76,14 @@ impl Handler {
             ));
 
             let mut config = ClientConfig::builder()
-                .with_safe_defaults()
+                .with_cipher_suites(&[
+                    TLS13_AES_256_GCM_SHA384,
+                    TLS13_AES_128_GCM_SHA256,
+                    TLS13_CHACHA20_POLY1305_SHA256,
+                ])
+                .with_safe_default_kx_groups()
+                .with_protocol_versions(&[&TLS13])
+                .unwrap()
                 .with_root_certificates(root_cert_store)
                 .with_no_client_auth();
             if jls_pwd.is_empty() {
@@ -81,6 +98,7 @@ impl Handler {
             Ok(Handler {
                 server_name,
                 tls_config: Arc::new(config),
+                zero_rtt: zero_rtt,
             })
         }
     }
@@ -105,15 +123,15 @@ impl OutboundStreamHandler for Handler {
         };
         trace!("wrapping jls with name {}", &name);
         if let Some(stream) = stream {
-            let connector = TlsConnector::from(self.tls_config.clone());
+            let connector = TlsConnector::from(self.tls_config.clone()).early_data(self.zero_rtt);
             let domain = ServerName::try_from(name.as_str()).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidInput,
                     format!("invalid jls server name {}: {}", &name, e),
                 )
             })?;
-            let tls_stream = connector
-                .connect(domain, stream)
+            let mut tls_stream = connector
+                .connect(domain, stream,Box::new(JlsFallbackHandler{}))
                 .map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -121,25 +139,50 @@ impl OutboundStreamHandler for Handler {
                     )
                 })
                 .await?;
-            match tls_stream.is_jls() {
-                Some(false) => {
-                    // Make some http request
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "jls authenticated failed",
-                    ));
+            if !tls_stream.get_mut().1.early_data().is_some() {
+                match tls_stream.is_jls() {
+                    Some(false) => {
+                        // Make some http request
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "jls authenticated failed",
+                        ));
+                    }
+                    Some(true) => {
+                        log::debug!("[jls] jls authenticated");
+                    }
+                    None => {
+                        return Err(io::Error::new(io::ErrorKind::Other, "jls not handshaked"));
+                    }
                 }
-                Some(true) => {
-                    log::debug!("[jls] jls authenticated");
-                }
-                None => {
-                    return Err(io::Error::new(io::ErrorKind::Other, "jls not handshaked"));
-                }
+            } else {
+                let zero_rtt_acc = tls_stream.early_data_accepted().expect("zero rtt acceptor not available");
+                tokio::spawn(async {
+                    if zero_rtt_acc.await {
+                        log::debug!("[jls] early data accepted");
+                    } else {
+                       log::warn!("[jls] early data rejected");
+                    }
+                });
             }
             // FIXME check negotiated alpn
             Ok(Box::new(tls_stream))
         } else {
             Err(io::Error::new(io::ErrorKind::Other, "invalid jls input"))
+        }
+    }
+}
+
+struct JlsFallbackHandler;
+impl<IO> JlsHandler<IO> for JlsFallbackHandler {
+    fn handle(&mut self,stream: &mut client::TlsStream<IO>) {
+        match stream.is_jls() {
+            Some(true) => (),
+            Some(false) => {
+                log::error!("[jls] close jls connection");
+                stream.get_mut().1.send_close_notify()
+            },
+            None => (),
         }
     }
 }
