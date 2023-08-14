@@ -237,7 +237,7 @@ quinn-jls = { package = "quinn", git = "https://github.com/vincentliu77/quinn-jl
 rustls-jls = { package = "rustls", git = "https://github.com/vincentliu77/rustls-jls", branch = "jls-main", optional = true }
 
 # JLS
-tokio-rustls-jls = { package = "tokio-rustls", git = "https://github.com/vincentliu77/tokio-rustls", branch = "jls-main", optional = true }
+tokio-rustls-jls = { package = "tokio-rustls", git = "https://github.com/vincentliu77/tokio-rustls", branch = "jls-main", features = ["early-data"], optional = true }
 
 # API
 warp = { version = "0.3", default-features = false, optional = true }
