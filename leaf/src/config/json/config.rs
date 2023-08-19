@@ -72,6 +72,7 @@ pub struct QuicJlsInboundSettings {
     pub upstream_url: Option<String>,
     #[serde(rename = "congestionController")]
     pub congestion_controller: Option<String>,
+    #[serde(rename = "sniProxy")]
     pub sni_proxy: Option<Vec<SniProxyEntry>>,
 }
 
@@ -87,6 +88,7 @@ pub struct JlsInboundSettings {
     pub zero_rtt: Option<bool>,
     #[serde(rename = "upstreamUrl")]
     pub upstream_url: Option<String>,
+    #[serde(rename = "sniProxy")]
     pub sni_proxy: Option<Vec<SniProxyEntry>>,
 }
 
@@ -594,7 +596,7 @@ pub fn to_internal(json: &mut Config) -> Result<internal::Config> {
                         panic!("[quic-jls] upstream address empty");
                     }
                     if let Some(sni_proxy) = ext_settings.sni_proxy {
-                        settings.sni_proxy = sni_proxy
+                                                settings.sni_proxy = sni_proxy
                             .iter()
                             .map(|x| internal::SniProxyEntry {
                                 server_name: x.server_name.clone(),
