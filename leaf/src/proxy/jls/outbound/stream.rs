@@ -131,7 +131,7 @@ impl OutboundStreamHandler for Handler {
                 )
             })?;
             let mut tls_stream = connector
-                .connect(domain, stream,Box::new(JlsFallbackHandler{}))
+                .connect_with(domain, stream,Box::new(JlsFallbackHandler{}),|_|{})
                 .map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -156,6 +156,7 @@ impl OutboundStreamHandler for Handler {
                     }
                 }
             } else {
+                log::info!("[jls] zero rtt available");
                 let zero_rtt_acc = tls_stream.early_data_accepted().expect("zero rtt acceptor not available");
                 tokio::spawn(async {
                     if zero_rtt_acc.await {
