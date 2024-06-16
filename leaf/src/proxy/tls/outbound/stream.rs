@@ -5,14 +5,14 @@ use std::io::BufReader;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::TryFutureExt;
-use log::*;
+use tracing::trace;
 
 #[cfg(feature = "rustls-tls")]
 use {
     std::sync::Arc,
     tokio_rustls::{
-        rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore, ServerName},
-        webpki, TlsConnector,
+        rustls::{pki_types::ServerName, ClientConfig, RootCertStore},
+        TlsConnector,
     },
 };
 
@@ -28,26 +28,62 @@ use crate::{proxy::*, session::Session};
 
 #[cfg(feature = "rustls-tls")]
 mod dangerous {
-    use std::time::SystemTime;
     use tokio_rustls::rustls::{
-        client::{ServerCertVerified, ServerCertVerifier},
-        Certificate, Error, ServerName,
+        client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+        pki_types::{CertificateDer, ServerName, UnixTime},
+        DigitallySignedStruct, Error, SignatureScheme,
     };
 
+    #[derive(Debug)]
     pub(super) struct NotVerified;
 
     impl ServerCertVerifier for NotVerified {
         fn verify_server_cert(
             &self,
-            _end_entity: &Certificate,
-            _intermediates: &[Certificate],
-            server_name: &ServerName,
-            _scts: &mut dyn Iterator<Item = &[u8]>,
+            _end_entity: &CertificateDer,
+            _intermediates: &[CertificateDer],
+            _server_name: &ServerName,
             _ocsp_response: &[u8],
-            _now: SystemTime,
+            _now: UnixTime,
         ) -> core::result::Result<ServerCertVerified, Error> {
-            log::debug!("TLS cert for {:?} not verified", server_name);
             Ok(ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            _message: &[u8],
+            _cert: &CertificateDer<'_>,
+            _dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            _message: &[u8],
+            _cert: &CertificateDer<'_>,
+            _dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            // Non-exhaustive, new variants can be added in the future.
+            vec![
+                SignatureScheme::RSA_PKCS1_SHA1,
+                SignatureScheme::ECDSA_SHA1_Legacy,
+                SignatureScheme::RSA_PKCS1_SHA256,
+                SignatureScheme::ECDSA_NISTP256_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::ECDSA_NISTP384_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
+                SignatureScheme::ECDSA_NISTP521_SHA512,
+                SignatureScheme::RSA_PSS_SHA256,
+                SignatureScheme::RSA_PSS_SHA384,
+                SignatureScheme::RSA_PSS_SHA512,
+                SignatureScheme::ED25519,
+                SignatureScheme::ED448,
+            ]
         }
     }
 }
@@ -69,33 +105,17 @@ impl Handler {
     ) -> Result<Self> {
         #[cfg(feature = "rustls-tls")]
         {
-            let mut root_cert_store = RootCertStore::empty();
+            let mut roots = RootCertStore::empty();
             if let Some(cert) = certificate {
                 let mut pem = BufReader::new(File::open(cert)?);
-                let certs = rustls_pemfile::certs(&mut pem)?;
-                let trust_anchors = certs.iter().map(|cert| {
-                    let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap(); // FIXME
-                    OwnedTrustAnchor::from_subject_spki_name_constraints(
-                        ta.subject,
-                        ta.spki,
-                        ta.name_constraints,
-                    )
-                });
-                root_cert_store.add_server_trust_anchors(trust_anchors);
+                for cert in rustls_pemfile::certs(&mut pem) {
+                    roots.add(cert?)?;
+                }
             } else {
-                root_cert_store.add_server_trust_anchors(
-                    webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
-                        OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            ta.subject,
-                            ta.spki,
-                            ta.name_constraints,
-                        )
-                    }),
-                );
+                roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
             }
             let mut config = ClientConfig::builder()
-                .with_safe_defaults()
-                .with_root_certificates(root_cert_store)
+                .with_root_certificates(roots)
                 .with_no_client_auth();
             if insecure {
                 let mut dangerous_config = config.dangerous();
@@ -146,6 +166,7 @@ impl OutboundStreamHandler for Handler {
     async fn handle<'a>(
         &'a self,
         sess: &'a Session,
+        _lhs: Option<&mut AnyStream>,
         stream: Option<AnyStream>,
     ) -> io::Result<AnyStream> {
         // TODO optimize, dont need copy
@@ -154,10 +175,10 @@ impl OutboundStreamHandler for Handler {
         } else {
             sess.destination.host()
         };
-        trace!("wrapping tls with name {}", &name);
         if let Some(stream) = stream {
             #[cfg(feature = "rustls-tls")]
             {
+                trace!("handling TLS {} with rustls", &name);
                 let connector = TlsConnector::from(self.tls_config.clone());
 
                 let domain = ServerName::try_from(name.as_str()).map_err(|e| {
@@ -168,7 +189,7 @@ impl OutboundStreamHandler for Handler {
                 })?;
 
                 let tls_stream = connector
-                    .connect(domain, stream)
+                    .connect(domain.to_owned(), stream)
                     .map_err(|e| {
                         io::Error::new(
                             io::ErrorKind::InvalidInput,
@@ -181,6 +202,7 @@ impl OutboundStreamHandler for Handler {
             }
             #[cfg(feature = "openssl-tls")]
             {
+                trace!("handling TLS {} with openssl", &name);
                 let mut ssl = Ssl::new(self.ssl_connector.context()).map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,

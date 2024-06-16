@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 
 use anyhow::{anyhow, Result};
-use byteorder::{BigEndian, ByteOrder};
-use log::*;
 use tokio::sync::RwLock;
+use tracing::debug;
 use trust_dns_proto::op::{
     header::MessageType, op_code::OpCode, response_code::ResponseCode, Message,
 };
 use trust_dns_proto::rr::{
-    dns_class::DNSClass, record_data::RData, record_type::RecordType, resource::Record,
+    dns_class::DNSClass, rdata, record_data::RData, record_type::RecordType, resource::Record,
 };
 
 pub enum FakeDnsMode {
@@ -59,7 +58,7 @@ pub(self) struct FakeDnsImpl {
 impl FakeDnsImpl {
     pub(self) fn new(mode: FakeDnsMode) -> Self {
         let min_cursor = Self::ip_to_u32(&Ipv4Addr::new(198, 18, 0, 0));
-        let max_cursor = Self::ip_to_u32(&Ipv4Addr::new(198, 18, 4, 255));
+        let max_cursor = Self::ip_to_u32(&Ipv4Addr::new(198, 18, 255, 255));
         Self {
             ip_to_domain: HashMap::new(),
             domain_to_ip: HashMap::new(),
@@ -130,7 +129,7 @@ impl FakeDnsImpl {
                 _ => return Err(anyhow!("unexpected Ipv6 fake IP")),
             }
         } else {
-            let ip = self.allocate_ip(&domain);
+            let ip = self.allocate_ip(&domain)?;
             debug!("allocate {} for {}", &ip, &domain);
             ip
         };
@@ -158,7 +157,7 @@ impl FakeDnsImpl {
                 .set_rr_type(RecordType::A)
                 .set_ttl(self.ttl)
                 .set_dns_class(DNSClass::IN)
-                .set_rdata(RData::A(ip));
+                .set_data(Some(RData::A(rdata::A(ip))));
             resp.add_answer(ans);
         }
 
@@ -174,27 +173,34 @@ impl FakeDnsImpl {
         ip >= self.min_cursor && ip <= self.max_cursor
     }
 
-    fn allocate_ip(&mut self, domain: &str) -> Ipv4Addr {
+    fn allocate_ip(&mut self, domain: &str) -> Result<Ipv4Addr> {
         if let Some(prev_domain) = self.ip_to_domain.insert(self.cursor, domain.to_owned()) {
             // Remove the entry in the reverse map to make sure we won't have
             // multiple domains point to a same IP.
             self.domain_to_ip.remove(&prev_domain);
         }
-        let ip = self.get_ip();
         self.domain_to_ip.insert(domain.to_owned(), self.cursor);
-        self.cursor += 1;
-        ip
+        let ip = Self::u32_to_ip(self.cursor);
+        self.prepare_next_cursor()?;
+        Ok(ip)
     }
 
-    fn get_ip(&mut self) -> Ipv4Addr {
-        if self.cursor > self.max_cursor {
-            self.cursor = self.min_cursor;
+    // Make sure `self.cursor` is valid and can be used immediately for next fake IP.
+    fn prepare_next_cursor(&mut self) -> Result<()> {
+        for _ in 0..3 {
+            self.cursor += 1;
+            if self.cursor > self.max_cursor {
+                self.cursor = self.min_cursor;
+            }
+            // avoid network and broadcast addresses
+            match Self::u32_to_ip(self.cursor).octets()[3] {
+                0 | 255 => {
+                    continue;
+                }
+                _ => return Ok(()),
+            }
         }
-        let ip = Self::u32_to_ip(self.cursor);
-        match ip.octets()[3] {
-            0 | 255 => { self.cursor += 1;self.get_ip() },
-            _ => ip,
-        }
+        Err(anyhow!("unable to prepare next cursor"))
     }
 
     fn accept(&self, domain: &str) -> bool {
@@ -223,7 +229,7 @@ impl FakeDnsImpl {
     }
 
     fn ip_to_u32(ip: &Ipv4Addr) -> u32 {
-        BigEndian::read_u32(&ip.octets())
+        u32::from_be_bytes(ip.octets())
     }
 }
 

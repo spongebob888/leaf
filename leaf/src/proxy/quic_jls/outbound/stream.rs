@@ -13,6 +13,7 @@ use super::QuicProxyStream;
 use quinn_jls as quinn;
 use rustls_jls as rustls;
 use rustls_jls::JlsConfig;
+use tracing::{info, trace, error};
 
 fn quic_err<E>(error: E) -> io::Error
 where
@@ -51,7 +52,7 @@ impl Manager {
         congestion_ctrl: String,
     ) -> Self {
         let mut roots = rustls::RootCertStore::empty();
-        roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+        roots.add_server_trust_anchors(webpki_roots_old::TLS_SERVER_ROOTS.iter().map(|ta| {
             rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                 ta.subject,
                 ta.spki,
@@ -92,7 +93,7 @@ impl Manager {
             }
             "" => {} // Default congestion controller
             _ => {
-                log::error!(
+                error!(
                     "[quic-jls] congestion controller {:?} not supported",
                     congestion_ctrl
                 );
@@ -126,7 +127,7 @@ impl Manager {
                     return true;
                 }
                 Some(false) => {
-                    log::error!("[quic-jls] jls pwd/iv error or connection hijacked");
+                    error!("[quic-jls] jls pwd/iv error or connection hijacked");
                     return false;
                 }
                 None => return c.zero_rtt, // Wait for handshake (for zero rtt, handshake may not be finished)
@@ -139,7 +140,7 @@ impl Manager {
                 match conn.new_conn.open_bi().await {
                     Ok((send, recv)) => {
                         conn.total_accepted += 1;
-                        log::trace!(
+                        trace!(
                             "[quic-jls] opened quic stream on connection with rtt {}ms, total_accepted {}",
                             conn.new_conn.rtt().as_millis(),
                             conn.total_accepted,
@@ -148,7 +149,7 @@ impl Manager {
                     }
                     Err(e) => {
                         conn.completed = true;
-                        log::debug!("[quic-jls] open quic bidirectional stream failed: {}", e);
+                        debug!("[quic-jls] open quic bidirectional stream failed: {}", e);
                     }
                 }
             } else {
@@ -208,16 +209,16 @@ impl Manager {
                 Ok((new_conn, zero_rtt_accept)) => {
                     tokio::spawn(async move {
                         if zero_rtt_accept.await {
-                            log::info!("[quic-jls] zero rtt accepted");
+                            info!("[quic-jls] zero rtt accepted");
                         } else {
-                            log::info!("[quic-jls] zero rtt rejected");
+                            info!("[quic-jls] zero rtt rejected");
                         }
                     });
                     conn_zero_rtt = true;
                     new_conn
                 }
                 Err(conn) => {
-                    log::info!("[quic-jls] zero rtt not available");
+                    info!("[quic-jls] zero rtt not available");
                     conn_zero_rtt = false;
                     conn.await?
                 }
@@ -291,6 +292,7 @@ impl OutboundStreamHandler for Handler {
     async fn handle<'a>(
         &'a self,
         _sess: &'a Session,
+        _lhs: Option<&mut AnyStream>,
         _stream: Option<AnyStream>,
     ) -> io::Result<AnyStream> {
         Ok(Box::new(self.new_stream().await?))

@@ -1,15 +1,14 @@
 use std::mem::MaybeUninit;
 use std::{cmp::min, io, pin::Pin};
 
-use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, Bytes, BytesMut};
 use futures::{
     ready,
     task::{Context, Poll},
 };
-use log::*;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tracing::debug;
 
 use crate::common::crypto::{
     aead::{AeadCipher, AeadDecryptor, AeadEncryptor},
@@ -27,8 +26,7 @@ enum ReadState {
 
 enum WriteState {
     WaitingSalt,
-    PendingSalt(usize, usize),
-    WaitingChunk,
+    WaitingChunk(usize),
     PendingChunk(usize, (usize, usize)),
 }
 
@@ -43,10 +41,11 @@ pub struct ShadowedStream<T> {
     read_state: ReadState,
     write_state: WriteState,
     read_pos: usize,
+    prefix: Option<Box<[u8]>>,
 }
 
 impl<T> ShadowedStream<T> {
-    pub fn new(s: T, cipher: &str, password: &str) -> io::Result<Self> {
+    pub fn new(s: T, cipher: &str, password: &str, prefix: Option<Box<[u8]>>) -> io::Result<Self> {
         let cipher = AeadCipher::new(cipher).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::Other,
@@ -56,6 +55,18 @@ impl<T> ShadowedStream<T> {
         let psk = kdf(password, cipher.key_len()).map_err(|e| {
             io::Error::new(io::ErrorKind::Other, format!("derive key failed: {}", e))
         })?;
+        if let Some(prefix) = prefix.as_ref() {
+            if prefix.len() > cipher.key_len() {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "prefix length exceeding cipher key length: {} > {}",
+                        prefix.len(),
+                        cipher.key_len()
+                    ),
+                ));
+            }
+        }
         Ok(ShadowedStream {
             inner: s,
             cipher,
@@ -69,6 +80,7 @@ impl<T> ShadowedStream<T> {
             read_state: ReadState::WaitingSalt,
             write_state: WriteState::WaitingSalt,
             read_pos: 0,
+            prefix,
         })
     }
 }
@@ -163,7 +175,8 @@ where
                     }
                     let dec = me.dec.as_mut().expect("uninitialized cipher");
                     dec.decrypt(&mut me.read_buf).map_err(|_| crypto_err())?;
-                    let payload_len = BigEndian::read_u16(&me.read_buf) as usize;
+                    let payload_len =
+                        u16::from_be_bytes(me.read_buf[..2].try_into().unwrap()) as usize;
 
                     // ready to read payload
                     me.read_state = ReadState::WaitingData(payload_len);
@@ -215,10 +228,12 @@ where
                     self.write_buf.reserve(salt_size);
                     unsafe { self.write_buf.set_len(salt_size) };
                     let mut rng = StdRng::from_entropy();
-                    for i in 0..salt_size {
-                        self.write_buf[i] = rng.gen();
+                    if let Some(prefix) = self.prefix.as_ref().cloned() {
+                        self.write_buf[..prefix.len()].copy_from_slice(&prefix);
+                        rng.fill_bytes(&mut self.write_buf[prefix.len()..salt_size]);
+                    } else {
+                        rng.fill_bytes(&mut self.write_buf[..salt_size]);
                     }
-
                     let key = hkdf_sha1(
                         &self.psk,
                         &self.write_buf[..salt_size],
@@ -235,51 +250,35 @@ where
 
                     self.enc.replace(enc);
 
-                    // ready to write salt
-                    self.write_state = WriteState::PendingSalt(salt_size, 0);
+                    self.write_state = WriteState::WaitingChunk(salt_size);
                 }
-                WriteState::PendingSalt(total, written) => {
+                WriteState::WaitingChunk(salt_size) => {
                     let me = &mut *self;
 
-                    // write salt
-                    // TODO write salt together with payload
-                    let nw = ready!(poll_write_buf(
-                        Pin::new(&mut me.inner),
-                        cx,
-                        &mut me.write_buf
-                    ))?;
-                    if nw == 0 {
-                        return Err(early_eof()).into();
-                    }
+                    let mut length_and_payload = me.write_buf.split_off(salt_size);
 
-                    if written + nw >= total {
-                        self.write_state = WriteState::WaitingChunk;
-                    } else {
-                        self.write_state = WriteState::PendingSalt(total, written + nw);
-                    }
-                }
-                WriteState::WaitingChunk => {
-                    let me = &mut *self;
                     // 0x3fff is the mandatory maximum size in ss spec
                     let consume_len = min(buf.len(), 0x3fff);
                     let enc = me.enc.as_mut().expect("uninitialized cipher");
 
                     // seal payload length
-                    let piece1_size = 2 + me.cipher.tag_len();
-                    me.write_buf.reserve(piece1_size);
-                    unsafe { me.write_buf.set_len(2) };
-                    BigEndian::write_u16(&mut me.write_buf[..2], consume_len as u16);
-                    enc.encrypt(&mut me.write_buf).map_err(|_| crypto_err())?;
-                    let mut piece2 = me.write_buf.split_off(piece1_size);
+                    let length_size = 2 + me.cipher.tag_len();
+                    length_and_payload.reserve(length_size);
+                    unsafe { length_and_payload.set_len(2) };
+                    length_and_payload[..2].copy_from_slice(&(consume_len as u16).to_be_bytes());
+                    enc.encrypt(&mut length_and_payload)
+                        .map_err(|_| crypto_err())?;
+                    let mut payload = length_and_payload.split_off(length_size);
 
                     // seal payload
-                    let piece2_size = consume_len + me.cipher.tag_len();
-                    piece2.reserve(piece2_size);
-                    piece2.put_slice(&buf[..consume_len]);
-                    enc.encrypt(&mut piece2).map_err(|_| crypto_err())?;
+                    let payload_size = consume_len + me.cipher.tag_len();
+                    payload.reserve(payload_size);
+                    payload.put_slice(&buf[..consume_len]);
+                    enc.encrypt(&mut payload).map_err(|_| crypto_err())?;
 
-                    // merge length and payload pieces
-                    me.write_buf.unsplit(piece2);
+                    // merge salt, length and payload
+                    length_and_payload.unsplit(payload);
+                    me.write_buf.unsplit(length_and_payload);
 
                     // ready to write data
                     self.write_state =
@@ -305,7 +304,7 @@ where
 
                     if written + nw >= total {
                         // data chunk written, go to next chunk
-                        me.write_state = WriteState::WaitingChunk;
+                        me.write_state = WriteState::WaitingChunk(0);
                         return Poll::Ready(Ok(consumed));
                     }
 

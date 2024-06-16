@@ -1,16 +1,17 @@
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use futures::future::select_ok;
-use log::*;
 use lru::LruCache;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
+use tracing::{debug, trace};
 use trust_dns_proto::{
     op::{
         header::MessageType, op_code::OpCode, query::Query, response_code::ResponseCode, Message,
@@ -74,10 +75,10 @@ impl DnsClient {
         let servers = Self::load_servers(dns)?;
         let hosts = Self::load_hosts(dns);
         let ipv4_cache = Arc::new(TokioMutex::new(LruCache::<String, CacheEntry>::new(
-            *option::DNS_CACHE_SIZE,
+            NonZeroUsize::new(*option::DNS_CACHE_SIZE).unwrap(),
         )));
         let ipv6_cache = Arc::new(TokioMutex::new(LruCache::<String, CacheEntry>::new(
-            *option::DNS_CACHE_SIZE,
+            NonZeroUsize::new(*option::DNS_CACHE_SIZE).unwrap(),
         )));
 
         Ok(Self {
@@ -176,13 +177,23 @@ impl DnsClient {
         server: &SocketAddr,
     ) -> Result<CacheEntry> {
         let socket = if is_direct {
+            debug!("direct lookup");
             let socket = self.new_udp_socket(server).await?;
             Box::new(StdOutboundDatagram::new(socket))
         } else {
+            debug!("dispatched lookup");
             if let Some(dispatcher_weak) = self.dispatcher.as_ref() {
+                // The source address will be used to determine which address the
+                // underlying socket will bind.
+                let source = match server {
+                    SocketAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+                    SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
+                };
                 let sess = Session {
                     network: Network::Udp,
+                    source,
                     destination: SocksAddr::from(server),
+                    inbound_tag: "internal".to_string(),
                     ..Default::default()
                 };
                 if let Some(dispatcher) = dispatcher_weak.upgrade() {
@@ -231,14 +242,16 @@ impl DnsClient {
                                 let mut ips = Vec::new();
                                 for ans in resp.answers() {
                                     // TODO checks?
-                                    match ans.rdata() {
-                                        RData::A(ip) => {
-                                            ips.push(IpAddr::V4(ip.to_owned()));
+                                    if let Some(data) = ans.data() {
+                                        match data {
+                                            RData::A(ip) => {
+                                                ips.push(IpAddr::V4(**ip));
+                                            }
+                                            RData::AAAA(ip) => {
+                                                ips.push(IpAddr::V6(**ip));
+                                            }
+                                            _ => (),
                                         }
-                                        RData::AAAA(ip) => {
-                                            ips.push(IpAddr::V6(ip.to_owned()));
-                                        }
-                                        _ => (),
                                     }
                                 }
                                 if !ips.is_empty() {
@@ -261,7 +274,7 @@ impl DnsClient {
                                         break;
                                     };
                                     let entry = CacheEntry { ips, deadline };
-                                    trace!("ips for {}:\n{:#?}", host, &entry);
+                                    debug!("ips for {}: {:#?}", host, &entry);
                                     return Ok(entry);
                                 } else {
                                     // response with 0 records

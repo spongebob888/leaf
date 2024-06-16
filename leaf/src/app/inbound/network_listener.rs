@@ -6,11 +6,11 @@ use std::time::Duration;
 use anyhow::Result;
 
 use futures::stream::StreamExt;
-use log::*;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::channel as tokio_channel;
 use tokio::sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender};
 use tokio::time::timeout;
+use tracing::{debug, info, trace, warn};
 
 use crate::app::dispatcher::Dispatcher;
 use crate::app::nat_manager::{NatManager, UdpPacket};
@@ -42,6 +42,11 @@ async fn handle_inbound_datagram(
     tokio::spawn(async move {
         while let Some(pkt) = l_rx.recv().await {
             let dst_addr = pkt.dst_addr.must_ip();
+            trace!(
+                "inbound send UDP packet: dst {}, {} bytes",
+                &dst_addr,
+                pkt.data.len()
+            );
             if let Err(e) = ls.send_to(&pkt.data[..], &pkt.src_addr, &dst_addr).await {
                 debug!("Send datagram failed: {}", e);
                 break;
@@ -64,6 +69,11 @@ async fn handle_inbound_datagram(
                 continue;
             }
             Ok((n, dgram_src, dst_addr)) => {
+                trace!(
+                    "inbound received UDP packet: src {}, {} bytes",
+                    &dgram_src.address,
+                    n
+                );
                 let pkt = UdpPacket::new(
                     (&buf[..n]).to_vec(),
                     SocksAddr::from(dgram_src.address),
@@ -97,8 +107,9 @@ async fn handle_inbound_transport(
         InboundTransport::Incoming(mut incoming) => {
             while let Some(transport) = incoming.next().await {
                 match transport {
-                    BaseInboundTransport::Stream(stream, sess) => {
+                    BaseInboundTransport::Stream(stream, mut sess) => {
                         let dispatcher_cloned = dispatcher.clone();
+                        sess.inbound_tag = handler.tag().clone();
                         tokio::spawn(async move {
                             dispatcher_cloned.dispatch_stream(sess, stream).await
                         });
@@ -173,7 +184,7 @@ async fn handle_tcp_listen(
             )
             .await
             {
-                log::debug!("handle inbound stream failed: {}", e);
+                debug!("handle inbound stream failed: {}", e);
             }
         });
     }
@@ -224,7 +235,7 @@ impl NetworkInboundListener {
                 )
                 .await
                 {
-                    log::warn!("handler tcp listen failed: {}", e);
+                    warn!("handler tcp listen failed: {}", e);
                 }
             }));
         }
@@ -243,7 +254,7 @@ impl NetworkInboundListener {
                 )
                 .await
                 {
-                    log::warn!("handler udp listen failed: {}", e);
+                    warn!("handler udp listen failed: {}", e);
                 }
             }));
         }

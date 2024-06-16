@@ -1,10 +1,15 @@
-.PHONY: local local-dev test proto-gen
+.PHONY: cli cli-dev test proto-gen
 
-local:
-	cargo build -p leaf-bin --release
+CFG_COMMIT_HASH := $(shell git rev-parse HEAD | cut -c 1-7)
+export CFG_COMMIT_HASH := $(CFG_COMMIT_HASH)
+CFG_COMMIT_DATE := $(shell git log --format="%ci" -n 1)
+export CFG_COMMIT_DATE := $(CFG_COMMIT_DATE)
 
-local-dev:
-	cargo build -p leaf-bin
+cli:
+	cargo build -p leaf-cli --release
+
+cli-dev:
+	cargo build -p leaf-cli
 
 test:
 	cargo test -p leaf -- --nocapture

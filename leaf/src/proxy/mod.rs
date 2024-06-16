@@ -8,21 +8,21 @@ use async_trait::async_trait;
 use futures::future::select_ok;
 use futures::stream::Stream;
 use futures::TryFutureExt;
-use log::*;
-use socket2::SockRef;
+use socket2::{Domain, SockRef, Socket, Type};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpSocket, TcpStream, UdpSocket};
 use tokio::time::timeout;
+use tracing::debug;
 
 #[cfg(unix)]
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsFd, AsRawFd};
 #[cfg(windows)]
-use std::os::windows::io::AsRawSocket;
+use std::os::windows::io::{AsRawSocket, AsSocket};
 #[cfg(target_os = "android")]
 use {
     std::os::unix::io::RawFd, tokio::io::AsyncReadExt, tokio::io::AsyncWriteExt,
-    tokio::net::UnixStream,
+    tokio::net::UnixStream, tracing::trace,
 };
 
 use crate::{
@@ -48,6 +48,8 @@ pub mod drop;
 pub mod failover;
 #[cfg(feature = "inbound-http")]
 pub mod http;
+#[cfg(feature = "outbound-obfs")]
+pub mod obfs;
 #[cfg(any(feature = "inbound-quic", feature = "outbound-quic"))]
 pub mod quic;
 #[cfg(feature = "outbound-redirect")]
@@ -56,8 +58,6 @@ pub mod redirect;
 pub mod select;
 #[cfg(any(feature = "inbound-shadowsocks", feature = "outbound-shadowsocks"))]
 pub mod shadowsocks;
-#[cfg(feature = "outbound-obfs")]
-pub mod obfs;
 #[cfg(any(feature = "inbound-socks", feature = "outbound-socks"))]
 pub mod socks;
 #[cfg(feature = "outbound-static")]
@@ -88,11 +88,7 @@ pub mod quic_jls;
 #[cfg(any(feature = "inbound-jls", feature = "outbound-jls"))]
 pub mod jls;
 
-pub use datagram::{
-    SimpleInboundDatagram, SimpleInboundDatagramRecvHalf, SimpleInboundDatagramSendHalf,
-    SimpleOutboundDatagram, SimpleOutboundDatagramRecvHalf, SimpleOutboundDatagramSendHalf,
-    StdOutboundDatagram,
-};
+pub use datagram::*;
 
 #[derive(Error, Debug)]
 pub enum ProxyError {
@@ -135,7 +131,7 @@ async fn protect_socket(fd: RawFd) -> io::Result<()> {
                 format!("failed to protect outbound socket {}: {:?}", fd, e),
             )
         })?;
-        log::debug!(
+        trace!(
             "protected socket {} in {} µs",
             fd,
             start.elapsed().as_micros()
@@ -168,7 +164,7 @@ async fn protect_socket(fd: RawFd) -> io::Result<()> {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-trait BindSocket: AsRawFd {
+trait BindSocket: AsFd {
     fn bind(&self, bind_addr: &SocketAddr) -> io::Result<()>;
 }
 
@@ -212,12 +208,12 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
     match indicator.ip() {
         IpAddr::V4(v4) if v4.is_loopback() => {
             socket.bind(&SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0).into())?;
-            trace!("socket bind loopback v4");
+            debug!("socket bind loopback v4");
             return Ok(());
         }
         IpAddr::V6(v6) if v6.is_loopback() => {
             socket.bind(&SocketAddrV6::new("::1".parse().unwrap(), 0, 0, 0).into())?;
-            trace!("socket bind loopback v6");
+            debug!("socket bind loopback v6");
             return Ok(());
         }
         _ => {}
@@ -237,14 +233,14 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
 
                     let ret = match indicator {
                         SocketAddr::V4(..) => libc::setsockopt(
-                            socket.as_raw_fd(),
+                            socket.as_fd().as_raw_fd(),
                             libc::IPPROTO_IP,
                             libc::IP_BOUND_IF,
                             &ifidx as *const _ as *const libc::c_void,
                             std::mem::size_of::<libc::c_uint>() as libc::socklen_t,
                         ),
                         SocketAddr::V6(..) => libc::setsockopt(
-                            socket.as_raw_fd(),
+                            socket.as_fd().as_raw_fd(),
                             libc::IPPROTO_IPV6,
                             libc::IPV6_BOUND_IF,
                             &ifidx as *const _ as *const libc::c_void,
@@ -255,14 +251,14 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
                         last_err = Some(io::Error::last_os_error());
                         continue;
                     }
-                    trace!("socket bind {}", iface);
+                    debug!("socket bind {}", iface);
                     return Ok(());
                 }
                 #[cfg(target_os = "linux")]
                 unsafe {
                     let ifa = CString::new(iface.as_bytes()).unwrap();
                     let ret = libc::setsockopt(
-                        socket.as_raw_fd(),
+                        socket.as_fd().as_raw_fd(),
                         libc::SOL_SOCKET,
                         libc::SO_BINDTODEVICE,
                         ifa.as_ptr() as *const libc::c_void,
@@ -272,7 +268,7 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
                         last_err = Some(io::Error::last_os_error());
                         continue;
                     }
-                    trace!("socket bind {}", iface);
+                    debug!("socket bind {}", iface);
                     return Ok(());
                 }
                 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -291,7 +287,7 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
                         last_err = Some(e);
                         continue;
                     }
-                    trace!("socket bind {}", addr);
+                    debug!("socket bind {}", addr);
                     return Ok(());
                 }
             }
@@ -307,26 +303,14 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
 
 // New UDP socket.
 pub async fn new_udp_socket(indicator: &SocketAddr) -> io::Result<UdpSocket> {
-    use socket2::{Domain, Socket, Type};
-    let socket = if *option::ENABLE_IPV6 {
-        // Dual-stack socket.
-        // FIXME Windows IPV6_V6ONLY?
-        Socket::new(Domain::IPV6, Type::DGRAM, None)?
-    } else {
-        match indicator {
-            SocketAddr::V4(..) => Socket::new(Domain::IPV4, Type::DGRAM, None)?,
-            SocketAddr::V6(..) => Socket::new(Domain::IPV6, Type::DGRAM, None)?,
-        }
+    let socket = match indicator {
+        SocketAddr::V4(..) => Socket::new(Domain::IPV4, Type::DGRAM, None)?,
+        SocketAddr::V6(..) => Socket::new(Domain::IPV6, Type::DGRAM, None)?,
     };
+
     socket.set_nonblocking(true)?;
 
-    // If the proxy request is coming from an inbound listens on the loopback,
-    // the indicator could be a loopback address, we must ignore it.
-    if indicator.ip().is_loopback() || *option::ENABLE_IPV6 {
-        bind_socket(&socket, &*option::UNSPECIFIED_BIND_ADDR).await?;
-    } else {
-        bind_socket(&socket, indicator).await?;
-    }
+    bind_socket(&socket, indicator).await?;
 
     #[cfg(target_os = "android")]
     protect_socket(socket.as_raw_fd()).await?;
@@ -339,12 +323,12 @@ fn apply_socket_opts_internal(s: SockRef) -> io::Result<()> {
 }
 
 #[cfg(unix)]
-fn apply_socket_opts<S: AsRawFd>(socket: &S) -> io::Result<()> {
+fn apply_socket_opts<S: AsFd>(socket: &S) -> io::Result<()> {
     let sock_ref = SockRef::from(socket);
     apply_socket_opts_internal(sock_ref)
 }
 #[cfg(windows)]
-fn apply_socket_opts<S: AsRawSocket>(socket: &S) -> io::Result<()> {
+fn apply_socket_opts<S: AsSocket>(socket: &S) -> io::Result<()> {
     let sock_ref = SockRef::from(socket);
     apply_socket_opts_internal(sock_ref)
 }
@@ -374,7 +358,7 @@ async fn tcp_dial_task(dial_addr: SocketAddr) -> io::Result<DialResult> {
     #[cfg(target_os = "android")]
     protect_socket(socket.as_raw_fd()).await?;
 
-    trace!("tcp dialing {}", &dial_addr);
+    debug!("tcp dialing {}", &dial_addr);
     let start = tokio::time::Instant::now();
     let stream = timeout(
         Duration::from_secs(*option::OUTBOUND_DIAL_TIMEOUT),
@@ -385,7 +369,7 @@ async fn tcp_dial_task(dial_addr: SocketAddr) -> io::Result<DialResult> {
 
     apply_socket_opts(&stream)?;
 
-    trace!(
+    debug!(
         "tcp {} <-> {} connected in {}ms",
         stream.local_addr()?,
         &dial_addr,
@@ -426,9 +410,12 @@ pub async fn connect_datagram_outbound(
     match handler.datagram()?.connect_addr() {
         OutboundConnect::Proxy(network, addr, port) => match network {
             Network::Udp => {
-                let socket = new_udp_socket(&sess.source).await?;
+                let socket = match addr.parse::<IpAddr>() {
+                    Ok(ip) if ip.is_loopback() => new_udp_socket(&SocketAddr::new(ip, 0)).await?,
+                    _ => new_udp_socket(&*crate::option::UNSPECIFIED_BIND_ADDR).await?,
+                };
                 Ok(Some(OutboundTransport::Datagram(Box::new(
-                    SimpleOutboundDatagram::new(socket, None, dns_client.clone()),
+                    DomainResolveOutboundDatagram::new(socket, dns_client.clone()),
                 ))))
             }
             Network::Tcp => {
@@ -436,18 +423,25 @@ pub async fn connect_datagram_outbound(
                 Ok(Some(OutboundTransport::Stream(stream)))
             }
         },
-        OutboundConnect::Direct => {
-            let socket = new_udp_socket(&sess.source).await?;
-            let dest = match &sess.destination {
-                SocksAddr::Domain(domain, port) => {
-                    Some(SocksAddr::Domain(domain.to_owned(), port.to_owned()))
-                }
-                _ => None,
-            };
-            Ok(Some(OutboundTransport::Datagram(Box::new(
-                SimpleOutboundDatagram::new(socket, dest, dns_client.clone()),
-            ))))
-        }
+        OutboundConnect::Direct => match &sess.destination {
+            SocksAddr::Domain(domain, port) => {
+                let socket = new_udp_socket(&*crate::option::UNSPECIFIED_BIND_ADDR).await?;
+                Ok(Some(OutboundTransport::Datagram(Box::new(
+                    DomainAssociatedOutboundDatagram::new(
+                        socket,
+                        sess.source.clone(),
+                        SocksAddr::Domain(domain.to_owned(), port.to_owned()),
+                        dns_client.clone(),
+                    ),
+                ))))
+            }
+            SocksAddr::Ip(addr) => {
+                let socket = new_udp_socket(addr).await?;
+                Ok(Some(OutboundTransport::Datagram(Box::new(
+                    StdOutboundDatagram::new(socket),
+                ))))
+            }
+        },
         _ => Ok(None),
     }
 }
@@ -572,7 +566,12 @@ pub trait OutboundStreamHandler<S = AnyStream>: Send + Sync + Unpin {
 
     /// Handles a session with the given stream. On success, returns a
     /// stream wraps the incoming stream.
-    async fn handle<'a>(&'a self, sess: &'a Session, stream: Option<S>) -> io::Result<S>;
+    async fn handle<'a>(
+        &'a self,
+        sess: &'a Session,
+        lhs: Option<&mut S>,
+        stream: Option<S>,
+    ) -> io::Result<S>;
 }
 
 type AnyOutboundStreamHandler = Box<dyn OutboundStreamHandler>;

@@ -9,6 +9,7 @@ use lazy_static::lazy_static;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
+use tracing::{error, info, trace, warn};
 
 #[cfg(feature = "auto-reload")]
 use notify::{
@@ -116,6 +117,7 @@ impl RuntimeManager {
         self.stat_manager.clone()
     }
 
+    #[cfg(feature = "outbound-select")]
     pub async fn set_outbound_selected(&self, outbound: &str, select: &str) -> Result<(), Error> {
         if let Some(selector) = self.outbound_manager.read().await.get_selector(outbound) {
             selector
@@ -128,6 +130,7 @@ impl RuntimeManager {
         }
     }
 
+    #[cfg(feature = "outbound-select")]
     pub async fn get_outbound_selected(&self, outbound: &str) -> Result<String, Error> {
         if let Some(selector) = self.outbound_manager.read().await.get_selector(outbound) {
             return Ok(selector.read().await.get_selected_tag());
@@ -135,6 +138,7 @@ impl RuntimeManager {
         Err(Error::Config(anyhow!("not found")))
     }
 
+    #[cfg(feature = "outbound-select")]
     pub async fn get_outbound_selects(&self, outbound: &str) -> Result<Vec<String>, Error> {
         if let Some(selector) = self.outbound_manager.read().await.get_selector(outbound) {
             return Ok(selector.read().await.get_available_tags());
@@ -152,7 +156,7 @@ impl RuntimeManager {
         } else {
             return Err(Error::NoConfigFile);
         };
-        log::info!("reloading from config file: {}", config_path);
+        info!("reloading from config file: {}", config_path);
         let mut config = config::from_file(config_path).map_err(Error::Config)?;
         app::logger::setup_logger(&config.log)?;
         self.router.write().await.reload(&mut config.router)?;
@@ -162,7 +166,7 @@ impl RuntimeManager {
             .await
             .reload(&config.outbounds, self.dns_client.clone())
             .await?;
-        log::info!("reloaded from config file: {}", config_path);
+        info!("reloaded from config file: {}", config_path);
         Ok(())
     }
 
@@ -181,7 +185,7 @@ impl RuntimeManager {
     pub async fn shutdown(&self) -> bool {
         let tx = self.shutdown_tx.clone();
         if let Err(e) = tx.send(()).await {
-            log::warn!("sending shutdown signal failed: {}", e);
+            warn!("sending shutdown signal failed: {}", e);
             return false;
         }
         true
@@ -190,7 +194,7 @@ impl RuntimeManager {
     pub fn blocking_shutdown(&self) -> bool {
         let tx = self.shutdown_tx.clone();
         if let Err(e) = tx.blocking_send(()) {
-            log::warn!("sending shutdown signal failed: {}", e);
+            warn!("sending shutdown signal failed: {}", e);
             return false;
         }
         true
@@ -204,7 +208,7 @@ impl RuntimeManager {
             return Err(Error::NoConfigFile);
         };
         if self.auto_reload {
-            log::trace!("starting new watcher for config file: {}", config_path);
+            trace!("starting new watcher for config file: {}", config_path);
             let rt_id = self.rt_id;
             let mut watcher: RecommendedWatcher =
                 notify::recommended_watcher(move |res: NotifyResult<event::Event>| {
@@ -217,9 +221,9 @@ impl RuntimeManager {
                                 event::EventKind::Modify(event::ModifyKind::Data(
                                     event::DataChange::Content,
                                 )) => {
-                                    log::info!("config file event matched: {:?}", ev);
+                                    info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
-                                        log::warn!("reload config file failed: {}", e);
+                                        warn!("reload config file failed: {}", e);
                                     }
                                 }
                                 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -227,22 +231,22 @@ impl RuntimeManager {
                                     event::AccessMode::Write,
                                 ))
                                 | event::EventKind::Remove(event::RemoveKind::File) => {
-                                    log::info!("config file event matched: {:?}", ev);
+                                    info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
-                                        log::warn!("reload config file failed: {}", e);
+                                        warn!("reload config file failed: {}", e);
                                     }
                                 }
                                 #[cfg(target_os = "windows")]
                                 event::EventKind::Modify(event::ModifyKind::Data(
                                     event::DataChange::Any,
                                 )) => {
-                                    log::info!("config file event matched: {:?}", ev);
+                                    info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
-                                        log::warn!("reload config file failed: {}", e);
+                                        warn!("reload config file failed: {}", e);
                                     }
                                 }
                                 _ => {
-                                    log::trace!("skip config file event: {:?}", ev);
+                                    trace!("skip config file event: {:?}", ev);
                                 }
                             }
                             // The config file could somehow be removed and re-created
@@ -255,7 +259,7 @@ impl RuntimeManager {
                             }
                         }
                         Err(e) => {
-                            log::error!("config file watch error: {:?}", e);
+                            error!("config file watch error: {:?}", e);
                         }
                     }
                 })
@@ -266,7 +270,7 @@ impl RuntimeManager {
                     RecursiveMode::NonRecursive,
                 )
                 .map_err(Error::Watcher)?;
-            log::info!("watching changes of file: {}", config_path);
+            info!("watching changes of file: {}", config_path);
             self.watcher.lock().unwrap().replace(watcher);
         }
         Ok(())
@@ -486,7 +490,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
     #[cfg(feature = "auto-reload")]
     {
         if let Err(e) = runtime_manager.new_watcher() {
-            log::warn!("start config file watcher failed: {}", e);
+            warn!("start config file watcher failed: {}", e);
         }
     }
 
@@ -517,10 +521,10 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
             if let Some(res_tx) = reload_rx.recv().await {
                 let res = rm.reload().await;
                 if let Err(e) = res_tx.send(res) {
-                    log::warn!("sending reload result failed: {}", e);
+                    warn!("sending reload result failed: {}", e);
                 }
             } else {
-                log::warn!("receiving none reload signal");
+                warn!("receiving none reload signal");
             }
         }
     }));
@@ -546,7 +550,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         .map_err(|_| Error::RuntimeManager)?
         .insert(rt_id, runtime_manager);
 
-    log::trace!("added runtime {}", &rt_id);
+    trace!("added runtime {}", &rt_id);
 
     rt.block_on(futures::future::select_all(tasks));
 
@@ -562,7 +566,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
 
     rt.shutdown_background();
 
-    log::trace!("removed runtime {}", &rt_id);
+    trace!("removed runtime {}", &rt_id);
 
     Ok(())
 }

@@ -1,11 +1,11 @@
 use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
 
-use log::*;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Instant};
+use tracing::{debug, trace, warn};
 use trust_dns_proto::{
     op::{header::MessageType, op_code::OpCode, query::Query, Message},
     rr::{record_type::RecordType, Name},
@@ -68,7 +68,8 @@ pub(self) async fn health_check(
                 } else {
                     return Measure(idx, u128::MAX);
                 };
-                match h.handle(&sess, stream).await {
+                // TODO Mock an LHS stream with the given payload.
+                match h.handle(&sess, None, stream).await {
                     Ok(mut stream) => {
                         if stream.write_all(b"HEAD / HTTP/1.1\r\n\r\n").await.is_err() {
                             return Measure(idx, u128::MAX - 2);
@@ -137,7 +138,7 @@ pub(self) async fn health_check(
                         if send.send_to(&msg_buf, &addr).await.is_err() {
                             return Measure(idx, u128::MAX - 2);
                         }
-                        let mut buf = [0u8; 1500];
+                        let mut buf = vec![0u8; 1500];
                         match recv.recv_from(&mut buf).await {
                             Ok(_) => {
                                 let elapsed = tokio::time::Instant::now().duration_since(start);

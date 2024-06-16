@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 use std::{io, pin::Pin};
@@ -7,10 +8,11 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::stream::Stream;
 use futures::task::{Context, Poll};
-use futures_util::stream::FuturesUnordered;
-use futures_util::StreamExt;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tracing::{log,error,trace,info};
 
 use crate::config::SniProxyEntry;
 use crate::{proxy::*, session::Session};
@@ -19,6 +21,8 @@ use super::QuicProxyStream;
 use quinn_jls as quinn;
 use quinn_jls::{RecvStream, SendStream};
 use rustls_jls as rustls;
+use rcgen_jls::{self as rcgen, Certificate};
+use rustls_pemfile_old as rustls_pemfile;
 
 struct Incoming {
     bi_recv: Receiver<(SendStream, RecvStream, SocketAddr)>,
@@ -95,7 +99,7 @@ impl Handler {
             let priv_key = cert.serialize_private_key_der();
             let priv_key = rustls::PrivateKey(priv_key);
             let cert_chain = vec![rustls::Certificate(cert_der.clone())];
-            log::info!("[quic-jls] generate self-signed cert automatically");
+            info!("[quic-jls] generate self-signed cert automatically");
             (cert_chain, priv_key)
         } else {
             let (cert, key) =
@@ -186,7 +190,7 @@ impl Handler {
             }
             "" => {} // Default congestion controller
             _ => {
-                log::error!("congestion controller {:?} not supported", congestion_ctrl);
+                error!("congestion controller {:?} not supported", congestion_ctrl);
             }
         };
         let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(crypto));
@@ -228,21 +232,21 @@ async fn handle_connectings(
         if zero_rtt {
             match conn.into_0rtt() {
                 Ok((conn, _accept)) => {
-                    log::trace!("[quic-jls] try into half rtt");
+                    trace!("[quic-jls] try into half rtt");
                     let _ = conn_send.send(conn).await.map_err(|e| {
-                        log::trace!("[quic-jls] connection send channel closed: {:?}", e)
+                        trace!("[quic-jls] connection send channel closed: {:?}", e)
                     });
                 }
                 Err(conn) => {
-                    log::trace!("[quic-jls] into half rtt failed");
+                    trace!("[quic-jls] into half rtt failed");
                     match conn.await {
                         Ok(conn) => {
                             let _ = conn_send.send(conn).await.map_err(|e| {
-                                log::trace!("[quic-jls] connection send channel closed: {:?}", e)
+                                trace!("[quic-jls] connection send channel closed: {:?}", e)
                             });
                         }
                         Err(e) => {
-                            log::trace!("[quic-jls]] into connnection failed");
+                            trace!("[quic-jls]] into connnection failed");
                         }
                     }
                 }
@@ -251,11 +255,11 @@ async fn handle_connectings(
             match conn.await {
                 Ok(conn) => {
                     let _ = conn_send.send(conn).await.map_err(|e| {
-                        log::trace!("[quic-jls] connection send channel closed: {:?}", e)
+                        trace!("[quic-jls] connection send channel closed: {:?}", e)
                     });
                 }
                 Err(e) => {
-                    log::trace!("[quic-jls] into connnection failed");
+                    trace!("[quic-jls] into connnection failed");
                 }
             }
         }
@@ -274,12 +278,12 @@ async fn handle_connections(
             match conn_recv.recv().await {
                 Some(conn) => conns.push(conn),
                 None => {
-                    log::error!("[quic-jls] connection send channel closed");
+                    error!("[quic-jls] connection send channel closed");
                     break;
                 }
             }
         }
-        log::trace!("[quic-jls] total connections: {:?}",futs.len());
+        trace!("[quic-jls] total connections: {:?}",futs.len());
         while let Some(conn) = conns.pop() {
             let fut = async {
                 loop {
@@ -288,7 +292,7 @@ async fn handle_connections(
                             match bi_send.send((send, recv, conn.remote_address())).await {
                                 Ok(()) => (),
                                 Err(e) => {
-                                    log::error!(
+                                    error!(
                                         "[quic-jls] bi stream recv channel closed: {:?}",
                                         e
                                     );
@@ -298,11 +302,11 @@ async fn handle_connections(
                             }
                         }
                         Err(quinn::ConnectionError::TimedOut) => {
-                            log::trace!("[quic-jls] accept bi timed out");
+                            trace!("[quic-jls] accept bi timed out");
                             break Err("Timed Out");
                         }
                         Err(e) => {
-                            log::error!("[quic-jls] accept bi error: {:?}", e);
+                            error!("[quic-jls] accept bi error: {:?}", e);
                             drop(conn);
                             break Err("Connection Err");
                         }
@@ -316,7 +320,7 @@ async fn handle_connections(
                 match incoming {
                     Some(conn) => {conns.push(conn)}
                     None => {
-                        log::error!("[quic-jls] connection send channel closed");
+                        error!("[quic-jls] connection send channel closed");
                         break
                     }
                 }

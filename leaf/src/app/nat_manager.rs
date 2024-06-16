@@ -3,11 +3,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures::future::{abortable, BoxFuture};
-use log::*;
 use tokio::sync::{
     mpsc::{self, Sender},
     oneshot, Mutex, MutexGuard,
 };
+use tracing::{debug, error, trace};
 
 use crate::app::dispatcher::Dispatcher;
 use crate::option;
@@ -83,10 +83,9 @@ impl NatManager {
                 let n_removed = n_total - n_remaining;
                 drop(sessions); // release the lock
                 if n_removed > 0 {
-                    trace!(
+                    debug!(
                         "removed {} nat sessions, remaining {} sessions",
-                        n_removed,
-                        n_remaining
+                        n_removed, n_remaining
                     );
                 }
                 tokio::time::sleep(Duration::from_secs(
@@ -134,13 +133,16 @@ impl NatManager {
             return;
         }
 
-        let sess = sess.cloned().unwrap_or(Session {
+        let mut sess = sess.cloned().unwrap_or(Session {
             network: Network::Udp,
             source: dgram_src.address,
             destination: pkt.dst_addr.clone(),
             inbound_tag: inbound_tag.to_string(),
             ..Default::default()
         });
+        if sess.inbound_tag.is_empty() {
+            sess.inbound_tag = inbound_tag.to_string();
+        }
 
         self.add_session(sess, dgram_src.clone(), client_ch_tx.clone(), &mut guard)
             .await;
@@ -207,6 +209,7 @@ impl NatManager {
                             break;
                         }
                         Ok((n, addr)) => {
+                            trace!("outbound received UDP packet: src {}, {} bytes", &addr, n);
                             let pkt = UdpPacket::new(
                                 (&buf[..n]).to_vec(),
                                 addr.clone(),
@@ -254,6 +257,11 @@ impl NatManager {
             // uplink
             tokio::spawn(async move {
                 while let Some(pkt) = target_ch_rx.recv().await {
+                    trace!(
+                        "outbound send UDP packet: dst {}, {} bytes",
+                        &pkt.dst_addr,
+                        pkt.data.len()
+                    );
                     if let Err(e) = target_sock_send.send_to(&pkt.data, &pkt.dst_addr).await {
                         debug!(
                             "Failed to send uplink packets on session {} to {}: {:?}",

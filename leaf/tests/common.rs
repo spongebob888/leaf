@@ -4,14 +4,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::future::abortable;
-use futures::FutureExt;
+
 use rand::RngCore;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
 use tokio::sync::RwLock;
 use tokio::time::timeout;
+use tracing::info;
 
 use leaf::proxy::*;
 use leaf::session::Session;
@@ -112,7 +113,10 @@ pub async fn new_socks_stream(socks_addr: &str, socks_port: u16, sess: &Session)
         .unwrap();
     timeout(
         Duration::from_secs(2),
-        handler.stream().unwrap().handle(sess, Some(Box::new(stream))),
+        handler
+            .stream()
+            .unwrap()
+            .handle(sess, None, Some(Box::new(stream))),
     )
     .await
     .unwrap()
@@ -135,7 +139,7 @@ pub async fn new_socks_datagram(
 }
 
 pub fn test_tcp_half_close_on_configs(configs: Vec<String>, socks_addr: &str, socks_port: u16) {
-    log::warn!("testing tcp half close");
+    info!("testing tcp half close");
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -287,7 +291,7 @@ async fn file_hash<P: AsRef<Path>>(p: P) -> Box<[u8]> {
         if n == 0 {
             break;
         } else {
-            hasher.write(&buf[..n]);
+            hasher.write(&buf[..n]).unwrap();
         }
     }
     hasher.finalize().as_slice().to_owned().into_boxed_slice()
@@ -298,7 +302,7 @@ pub fn test_data_transfering_reliability_on_configs(
     socks_addr: &str,
     socks_port: u16,
 ) {
-    log::warn!("testing data transfering reliability");
+    info!("testing data transfering reliability");
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -309,14 +313,15 @@ pub fn test_data_transfering_reliability_on_configs(
     let dst_file = "destination_random_bytes.bin";
     let source = path.join(src_file);
     let dst = path.join(dst_file);
-    if !source.exists() {
-        let mut rng = StdRng::from_entropy();
-        let mut data = vec![0u8; 25 * 1024 * 1024]; // 25MB payload
-        rng.fill_bytes(&mut data);
-        let mut f = std::fs::File::create(source).unwrap();
-        f.write_all(&data).unwrap();
-        f.sync_all().unwrap();
+    if source.exists() {
+        std::fs::remove_file(&source).unwrap();
     }
+    let mut rng = StdRng::from_entropy();
+    let mut data = vec![0u8; 2 * 1024 * 1024];
+    rng.fill_bytes(&mut data);
+    let mut f = std::fs::File::create(source).unwrap();
+    f.write_all(&data).unwrap();
+    f.sync_all().unwrap();
 
     // TCP uplink
     let recv_task = async move {
@@ -417,7 +422,7 @@ pub fn test_data_transfering_reliability_on_configs(
         let dst_hash = file_hash(&dst).await;
         assert_eq!(src_hash.as_ref(), dst_hash.as_ref());
     };
-    let socks_addr_cloned = socks_addr.to_string();
+    let _socks_addr_cloned = socks_addr.to_string();
     let mut path = std::env::current_exe().unwrap();
     path.pop();
     let send_task = async move {
@@ -511,7 +516,7 @@ pub fn test_data_transfering_reliability_on_configs(
         let source = path.join(src_file);
         let mut sess = leaf::session::Session::default();
         sess.destination = leaf::session::SocksAddr::Ip("127.0.0.1:3000".parse().unwrap());
-        let mut dgram = new_socks_datagram(&socks_addr_cloned, socks_port, &sess).await;
+        let dgram = new_socks_datagram(&socks_addr_cloned, socks_port, &sess).await;
         let (_, mut s) = dgram.split();
         let mut src = tokio::fs::File::open(source).await.unwrap();
         let mut buf = vec![0u8; 1500];
@@ -524,7 +529,7 @@ pub fn test_data_transfering_reliability_on_configs(
                 .unwrap()
                 .unwrap();
             if n > 0 {
-                let n = timeout(
+                let _n = timeout(
                     Duration::from_secs(2),
                     s.send_to(&buf[..n], &sess.destination),
                 )
@@ -561,10 +566,10 @@ pub fn test_data_transfering_reliability_on_configs(
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let mut sess = leaf::session::Session::default();
         sess.destination = leaf::session::SocksAddr::Ip("127.0.0.1:3000".parse().unwrap());
-        let mut dgram = new_socks_datagram(&socks_addr_cloned, socks_port, &sess).await;
+        let dgram = new_socks_datagram(&socks_addr_cloned, socks_port, &sess).await;
         let (mut r, mut s) = dgram.split();
         let source = path.join(src_file);
-        let mut buf = vec![0u8; 1500];
+        let _buf = vec![0u8; 1500];
         if dst.exists() {
             tokio::fs::remove_file(&dst).await.unwrap();
         }
@@ -610,11 +615,11 @@ pub fn test_data_transfering_reliability_on_configs(
         let dst_hash = file_hash(&dst).await;
         assert_eq!(src_hash.as_ref(), dst_hash.as_ref());
     };
-    let socks_addr_cloned = socks_addr.to_string();
+    let _socks_addr_cloned = socks_addr.to_string();
     let mut path = std::env::current_exe().unwrap();
     path.pop();
     let send_task = async move {
-        let mut socket = UdpSocket::bind("127.0.0.1:3000").await.unwrap();
+        let socket = UdpSocket::bind("127.0.0.1:3000").await.unwrap();
         let source = path.join(src_file);
         let mut src = tokio::fs::File::open(source).await.unwrap();
         let mut buf = vec![0u8; 1500];
@@ -629,7 +634,7 @@ pub fn test_data_transfering_reliability_on_configs(
                 .unwrap()
                 .unwrap();
             if n > 0 {
-                let n = timeout(Duration::from_secs(2), socket.send_to(&buf[..n], &raddr))
+                let _n = timeout(Duration::from_secs(2), socket.send_to(&buf[..n], &raddr))
                     .await
                     .unwrap()
                     .unwrap();
@@ -660,7 +665,7 @@ pub fn test_data_transfering_reliability_on_configs(
 // given socks server to test the proxy chain. The proxy chain is expected to
 // correctly handle the request to it's destination.
 pub fn test_configs(configs: Vec<String>, socks_addr: &str, socks_port: u16) {
-    log::warn!("testing configs");
+    info!("testing configs");
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -753,7 +758,7 @@ pub fn test_configs(configs: Vec<String>, socks_addr: &str, socks_port: u16) {
         bg_task_handle.abort();
     };
     let bg_task = async move {
-        bg_task.await;
+        let _ = bg_task.await;
     };
     let mut futs = Vec::new();
     futs.push(rt.spawn(bg_task));

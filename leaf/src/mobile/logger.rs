@@ -29,18 +29,18 @@ fn log_out(data: &[u8]) {
 
 #[cfg(target_os = "android")]
 fn log_out(data: &[u8]) {
+    if data.is_empty() {
+        return;
+    }
     unsafe {
         let s = match ffi::CString::new(data) {
             Ok(s) => s,
             Err(_) => return,
         };
-        const ANDROID_LOG_TAG: &str = "leaf";
+        let tag = ffi::CString::new("leaf").unwrap();
         let _ = __android_log_print(
             android_LogPriority_ANDROID_LOG_VERBOSE as std::os::raw::c_int,
-            ffi::CString::new(ANDROID_LOG_TAG)
-                .unwrap()
-                .as_c_str()
-                .as_ptr(),
+            tag.as_c_str().as_ptr(),
             s.as_c_str().as_ptr(),
         );
     }

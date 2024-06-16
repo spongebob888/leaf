@@ -1,12 +1,11 @@
-use std::cmp::min;
 use std::io;
 
 use async_trait::async_trait;
-use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, BytesMut};
 use futures::future::TryFutureExt;
 use sha2::{Digest, Sha224};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
+use tracing::trace;
 
 use crate::{proxy::*, session::*};
 
@@ -94,30 +93,32 @@ where
 {
     async fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<(usize, SocksAddr)> {
         let addr = SocksAddr::read_from(&mut self.0, SocksAddrWireType::PortLast).await?;
-        let mut buf2 = BytesMut::new();
-        buf2.resize(2, 0);
-        let _ = self.0.read_exact(&mut buf2).await?;
-        let payload_len = BigEndian::read_u16(&buf2);
-        let _ = self.0.read_exact(&mut buf2).await?;
-        if &buf2[..2] != b"\r\n" {
-            return Err(io::Error::new(io::ErrorKind::Other, "Expected CLRF"));
-        }
-        buf2.resize(payload_len as usize, 0);
-        let _ = self.0.read_exact(&mut buf2).await?;
-        let to_write = min(buf2.len(), buf.len());
-        if to_write < buf2.len() {
+        let mut buf2 = [0; 4];
+        self.0.read_exact(&mut buf2).await?;
+        let payload_len = u16::from_be_bytes(buf2[..2].try_into().unwrap()) as usize;
+        // TODO Check CLRF?
+        if buf.len() < payload_len {
             return Err(io::Error::new(io::ErrorKind::Interrupted, "Small buffer"));
         }
-        buf[..to_write].copy_from_slice(&buf2[..to_write]);
-
+        self.0.read_exact(&mut buf[..payload_len]).await?;
         // If the initial destination is of domain type, we return that
         // domain address instead of the real source address. That also
         // means we assume all received packets are comming from a same
         // address.
         if self.1.is_some() {
-            Ok((to_write, self.1.as_ref().unwrap().clone()))
+            trace!(
+                "trojan outbound received UDP {} bytes from {}",
+                payload_len,
+                self.1.as_ref().unwrap()
+            );
+            Ok((payload_len, self.1.as_ref().unwrap().clone()))
         } else {
-            Ok((to_write, addr))
+            trace!(
+                "trojan outbound received UDP {} bytes from {}",
+                payload_len,
+                &addr
+            );
+            Ok((payload_len, addr))
         }
     }
 }
@@ -130,10 +131,7 @@ where
     T: AsyncRead + AsyncWrite + Send + Sync,
 {
     async fn send_to(&mut self, buf: &[u8], target: &SocksAddr) -> io::Result<usize> {
-        // FIXME we should calculate the return size more carefully.
-        // max(0, n_written - all_headers_size)
-        let payload_size = buf.len();
-
+        trace!("trojan outbound send UDP {} bytes to {}", buf.len(), target);
         let mut data = BytesMut::new();
         target.write_buf(&mut data, SocksAddrWireType::PortLast);
         data.put_u16(buf.len() as u16);
@@ -144,11 +142,11 @@ where
         if self.1.is_some() {
             if let Some(mut head) = self.1.take() {
                 head.extend_from_slice(&data);
-                return self.0.write_all(&head).map_ok(|_| payload_size).await;
+                return self.0.write_all(&head).map_ok(|_| buf.len()).await;
             }
         }
 
-        self.0.write_all(&data).map_ok(|_| payload_size).await
+        self.0.write_all(&data).map_ok(|_| buf.len()).await
     }
 
     async fn close(&mut self) -> io::Result<()> {
